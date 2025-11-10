@@ -17,6 +17,7 @@ Tests are located in the `tests/` folder, separate from the main application cod
 ### Test Files
 
 - `tests/cmd_test.go` - CLI integration tests (builds and tests actual binary)
+- `tests/interactive_test.go` - Interactive package tests (spinner, message functions)
 
 ## Test Functions
 
