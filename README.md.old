@@ -1,0 +1,629 @@
+# VPSSetup - Automated VPS Deployment Tool
+
+Fast and reliable VPS setup automation tool that eliminates the pain of manual server configuration. Automates VPS creation, DNS management, security hardening, and system updates.
+
+## Why?
+
+Sick and tired of VPS configuration? The constant back-and-forth between different dashboards just to setup a VPS, then switching to SSH terminals, configuring NGINX, managing DNS records, setting up SSL certificates... It's exhausting and time-consuming.
+
+### ✅ Implemented (Phase 1)Every single deployment meant:
+
+- **VPS Creation** - Automated VPS provisioning on DigitalOcean
+
+- **SSH Key Management** - Automatic SSH key generation and upload (with reuse detection)- Logging into the VPS provider dashboard
+
+- **Firewall Configuration** - Automatic security rules for SSH, HTTP, HTTPS- Spinning up a server
+
+- **System Updates** - Automatic apt-get update & upgrade after VPS creation- Switching to the domain registrar to configure DNS
+
+- **SSH Connection** - Direct SSH access to your VPS- SSH'ing into the server to install dependencies
+
+- **Config Management** - Profile-based YAML configuration with VPS info persistence- Writing NGINX configs from scratch
+
+- **Interactive CLI** - Beautiful, user-friendly prompts and progress indicators- Fighting with Let's Encrypt
+
+- Going back to SSH to check if everything works
+
+### 🚧 In Progress (Phase 2)- Reading logs in the terminal to debug issues
+
+- **Application Upload** - Deploy your code to VPS
+
+- **NGINX Configuration** - Automatic web server setup**Enough is enough.** That's why I created this program - to automate all of this pain away and get back to actually building things instead of fighting with infrastructure.
+
+- **SSL Certificates** - Let's Encrypt integration
+
+- **DNS Management** - Subdomain registration## Overview
+
+### 📋 Planned (Phase 3+)This project streamlines the VPS setup process, eliminating hours of manual terminal configuration. Perfect for testing projects or quickly deploying websites with proper domain configuration, web server setup, and SSL encryption.
+
+- **Logs Retrieval** - Fetch application logs
+
+- **Status Monitoring** - Check VPS health## Features
+
+- **Destroy Command** - Clean removal of resources
+
+- **Multiple Providers** - Support for AWS, Linode, Vultr- 🚀 **Fast Setup** - Automated VPS provisioning and configuration
+
+- 🌐 **Subdomain Registration** - Automatic DNS configuration
+
+## Installation- 📦 **Project Upload** - Seamless code deployment to VPS
+
+- 🔒 **SSL/TLS** - Automatic SSL certificate generation and renewal
+
+### Prerequisites- ⚙️ **NGINX Configuration** - Auto-configured reverse proxy and web server
+
+- Go 1.24+ (with toolchain 1.24.1)- 📊 **Log Management** - Easy access to VPS logs and data
+
+- DigitalOcean API token
+
+## Use Cases
+
+### Build from Source
+
+````bash- Quick testing and staging environments
+
+# Clone the repository- Rapid website deployment
+
+git clone https://github.com/Vova4o/VPSSetup.git- Development environment setup
+
+cd VPSSetup- Small to medium project hosting
+
+
+
+# Build## Design Philosophy
+
+make build
+
+**Separation of Concerns:**
+
+# Or build manually
+
+go build -o bin/vpssetup cmd/*.go- **Infrastructure** (`setup`, `deploy`) - Creates VPS, firewall, SSH keys only
+
+```- **Application** (`upload`, future) - Handles project deployment, NGINX, SSL, DNS
+
+
+
+### Cross-Platform BuildsThis separation allows you to:
+
+```bash
+
+# Build for all platforms1. Create VPS infrastructure once
+
+make build-all2. Deploy multiple applications or configurations to it
+
+3. Reuse the same VPS for different projects
+
+# Build for specific platform
+
+make build-linux## Prerequisites
+
+make build-darwin
+
+make build-windows- Go 1.19+ installed
+
+```- VPS provider account (DigitalOcean currently supported)
+
+- API credentials for your VPS provider
+
+## Quick Start- SSH key pair (can be auto-generated with `init`)
+
+
+
+### 1. Initialize Configuration## Installation
+
+```bash
+
+./bin/vpssetup init```bash
+
+```# Clone the repository
+
+This will:git clone <repository-url>
+
+- Ask for your DigitalOcean API tokencd VPSSetup
+
+- Generate SSH keys (or use existing ones)
+
+- Create a `config.yaml` file# Build the project
+
+go build -o vpssetup
+
+### 2. Create a VPS
+
+```bash# Make executable
+
+./bin/vpssetup setupchmod +x vpssetup
+
+````
+
+This will **interactively**:
+
+- Let you choose region (e.g., Toronto, NYC, San Francisco)## Configuration
+
+- Let you choose instance size (e.g., $4/mo, $6/mo)
+
+- Ask for VPS nameCreate a `config.yaml` file in the project root:
+
+- Create the VPS with firewall configuration
+
+- **Run system updates automatically** (apt-get update & upgrade)```yaml
+
+- Save VPS information to configvps:
+
+  provider: "digitalocean" # or linode, vultr, etc.
+
+### 3. Connect to VPS api_key: "your-api-key"
+
+```bash region: "nyc3"
+
+./bin/vpssetup connect  size: "s-1vcpu-1gb"
+
+```
+
+Opens an SSH session to your VPS.domain:
+
+name: "example.com"
+
+### 4. (Coming Soon) Deploy Application subdomain: "app"
+
+```bash dns_provider: "cloudflare"
+
+./bin/vpssetup deploy  dns_api_key: "your-dns-api-key"
+
+```
+
+This will upload your application and configure NGINX + SSL.project:
+
+path: "./your-project"
+
+## Configuration port: 8080
+
+Configuration is stored in `config.yaml`:ssl:
+
+email: "your-email@example.com"
+
+`````yaml enable: true
+
+default_profile: default```
+
+
+
+profiles:## Usage
+
+  default:
+
+    digitalocean:### Quick Start
+
+      token: do_xxx...
+
+    ```bash
+
+    vps:# 1. Initialize configuration (interactive wizard)
+
+      instanceid: "529310560"./vpssetup init
+
+      publicip: "134.122.37.22"
+
+      name: "my-vps"# 2. Create VPS with firewall (WORKING!)
+
+      region: "tor1"./vpssetup setup --profile production
+
+      size: "s-1vcpu-512mb-10gb"
+
+      createdat: "2025-11-10"# 3. Or use deploy for automated setup (partial implementation)
+
+    ./vpssetup deploy --profile production
+
+    ssh:# Note: Currently creates VPS, but remaining steps (upload, nginx, ssl, dns) need manual configuration
+
+      keypath: ~/.ssh/vpssetup_rsa```
+
+      user: root
+
+    ### Available Commands
+
+    domain:
+
+      zone: example.com```bash
+
+      subdomain: app# 1. Initialize configuration (interactive wizard)
+
+```./vpssetup init
+
+
+
+### Multiple Profiles# 2. Create and setup VPS with firewall
+
+./vpssetup setup --profile production
+
+You can create multiple profiles for different projects:
+
+# 3. Apply security hardening
+
+```yaml./vpssetup harden --profile production
+
+profiles:
+
+  production:# 4. Connect to VPS via SSH
+
+    digitalocean:./vpssetup connect --profile production
+
+      token: xxx
+
+    domain:# 5. Full deployment (creates VPS only, rest is manual)
+
+      zone: myapp.com./vpssetup deploy --profile production
+
+      subdomain: api
+
+  # 6. Upload project files (NOT IMPLEMENTED)
+
+  staging:./vpssetup upload --profile production
+
+    digitalocean:
+
+      token: xxx# 7. Get logs from VPS (NOT IMPLEMENTED)
+
+    domain:./vpssetup logs --tail 100
+
+      zone: myapp.com
+
+      subdomain: staging# 8. Check VPS status (NOT IMPLEMENTED)
+
+```./vpssetup status --profile production
+
+
+
+Use with: `./bin/vpssetup setup --profile staging`# 9. Destroy VPS instance (NOT IMPLEMENTED)
+
+./vpssetup destroy --profile production
+
+## Commands```
+
+
+
+| Command | Status | Description |## Current Implementation Status
+
+|---------|--------|-------------|
+
+| `init` | ✅ Working | Initialize configuration and API tokens |### ✅ Working Features
+
+| `setup` | ✅ Working | Create VPS with firewall + updates |
+
+| `connect` | ✅ Working | SSH into your VPS |- **`init`** - Interactive wizard to create configuration
+
+| `harden` | ⚠️ Partial | Shows security hardening commands |- **`setup`** - Creates VPS droplet with firewall on DigitalOcean
+
+| `deploy` | 🔄 Redirects | Redirects to setup (not yet implemented) |- **`harden`** - Shows security hardening commands
+
+| `upload` | ❌ Planned | Upload application files |- **`deploy`** - Creates VPS (but doesn't upload/configure yet)
+
+| `logs` | ❌ Planned | Retrieve VPS logs |
+
+| `status` | ❌ Planned | Check VPS status |### ⚠️ Partially Working
+
+| `destroy` | ❌ Planned | Destroy VPS and cleanup |
+
+| `ssl-setup` | ❌ Planned | Configure SSL certificates |- **`deploy`** - Only creates the VPS, doesn't upload files, configure NGINX, SSL, or DNS
+
+| `ssl-renew` | ❌ Planned | Renew SSL certificates |
+
+| `dns-add` | ❌ Planned | Add DNS record |### ❌ Not Yet Implemented
+
+| `dns-remove` | ❌ Planned | Remove DNS record |
+
+- **`connect`** - SSH connection testing
+
+## Architecture- **`upload`** - Project file upload
+
+- **`logs`** - Log retrieval
+
+```- **`ssl`** - SSL certificate management
+
+VPSSetup/- **`dns`** - DNS record management
+
+├── cmd/                    # CLI commands and handlers- **`status`** - VPS status checking
+
+│   ├── main.go            # Command definitions- **`destroy`** - VPS deletion
+
+│   └── handlers.go        # Command implementations
+
+├── internal/              # Internal packages```
+
+│   ├── config/           # Configuration management
+
+│   ├── connection/       # SSH client implementation## Project Structure
+
+│   ├── hardening/        # Security hardening scripts
+
+│   ├── interactive/      # Interactive CLI prompts```
+
+│   ├── setup/           # VPS setup orchestration
+
+│   ├── upload/          # File upload (planned)VPSSetup/
+
+│   ├── logs/            # Log retrieval (planned)├── cmd/
+
+│   ├── nginx/           # NGINX config (planned)│ └── main.go # CLI entry point
+
+│   └── ssl/             # SSL management (planned)├── internal/
+
+├── pkg/                  # Public packages│ ├── setup/ # VPS setup logic
+
+│   └── provider/        # Cloud provider integrations│ ├── connection/ # VPS connection handling
+
+│       ├── digitalocean.go│ ├── upload/ # Project upload and deployment
+
+│       └── firewall.go│ ├── logs/ # Log retrieval and management
+
+├── tests/               # Test files│ ├── nginx/ # NGINX configuration
+
+│   ├── cmd_test.go│ ├── ssl/ # SSL/Let's Encrypt integration
+
+│   └── interactive_test.go│ └── dns/ # DNS/subdomain management
+
+└── Makefile            # Build automation├── pkg/
+
+```│ ├── provider/ # VPS provider interfaces
+
+│ └── utils/ # Utility functions
+
+## Development├── config.yaml # Configuration file
+
+├── README.md
+
+### Running Tests└── go.mod
+
+```bash
+
+# Run all tests````
+
+go test ./tests/... -v
+
+## Implementation TODO List
+
+# Run specific test
+
+go test ./tests/ -run TestInitCommand -v### Phase 1: Setup
+
+
+
+# Run with coverage- [x] Design CLI interface and command structure ✅
+
+go test ./tests/... -cover- [x] Implement configuration file parser (YAML/JSON) ✅
+
+```- [x] Create VPS provider abstraction layer ✅
+
+- [x] Setup SSH key management ✅ (automatic generation during `init`)
+
+### Adding a New Command- [x] Add interactive setup wizard ✅
+
+- [x] Integrate DigitalOcean API for regions/sizes ✅
+
+1. Define command in `cmd/main.go`- [x] Implement VPS instance creation (via API) ✅
+
+2. Implement handler in `cmd/handlers.go`- [x] Add firewall rules configuration (ports 80, 443, 22) ✅
+
+3. Add tests in `tests/`- [x] Implement system updates and basic security hardening ✅
+
+4. Update README.md- [ ] Add support for multiple VPS providers (DigitalOcean, Linode, Vultr) ⚠️ (only DigitalOcean completed)
+
+
+
+## Technology Stack### Phase 2: Connection and Creation
+
+
+
+- **Language**: Go 1.24.0- [ ] Implement SSH connection management
+
+- **CLI Framework**: [Cobra](https://github.com/spf13/cobra) v1.10.1- [ ] Add connection pooling and retry logic
+
+- **Configuration**: [Viper](https://github.com/spf13/viper) v1.21.0- [ ] Create health check mechanism
+
+- **Interactive Prompts**: [Survey](https://github.com/AlecAivazis/survey) v2.3.7- [ ] Implement VPS status monitoring
+
+- **Progress Indicators**: [Spinner](https://github.com/briandowns/spinner) v1.23.2- [ ] Add connection validation and diagnostics
+
+- **Cloud Provider**: [DigitalOcean Godo](https://github.com/digitalocean/godo) v1.168.0- [ ] Setup SSH config file generation
+
+- **SSH**: [golang.org/x/crypto/ssh](https://pkg.go.dev/golang.org/x/crypto/ssh)- [ ] Implement non-interactive authentication
+
+- **OAuth2**: [golang.org/x/oauth2](https://pkg.go.dev/golang.org/x/oauth2) v0.33.0- [ ] Add connection timeout handling
+
+
+
+## Implementation Status### Phase 3: Upload and Setup VPS
+
+
+
+See [IMPLEMENTATION.md](IMPLEMENTATION.md) for detailed feature status and implementation notes.- [ ] Implement secure file transfer (SFTP/SCP)
+
+- [ ] Create project directory structure on VPS
+
+## Workflow Design- [ ] Add dependency installation (language-specific)
+
+- [ ] Implement NGINX configuration generation
+
+The tool follows this clear workflow:- [ ] Setup NGINX reverse proxy rules
+
+- [ ] Integrate Let's Encrypt for SSL certificates
+
+1. **`init`** - One-time setup: collect API tokens, generate/configure SSH keys- [ ] Configure automatic SSL renewal
+
+2. **`setup`** - Interactive VPS creation: choose region/size, create VPS, configure firewall, run updates- [ ] Setup DNS records via provider API
+
+3. **`deploy`** - (Coming soon) Upload and configure your application- [ ] Implement subdomain creation and validation
+
+4. **`connect`** - SSH access to your VPS- [ ] Add application service management (systemd)
+
+5. **`harden`** - Additional security hardening- [ ] Create startup scripts for application
+
+6. **Other commands** - Management, monitoring, cleanup- [ ] Implement health checks after deployment
+
+- [ ] Add rollback mechanism for failed deployments
+
+## Contributing
+
+### Phase 4: Get Logs and Data from VPS
+
+Contributions are welcome! Please:
+
+- [ ] Implement remote log retrieval
+
+1. Fork the repository- [ ] Add log streaming capability
+
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)- [ ] Create log filtering and searching
+
+3. Commit your changes (`git commit -m 'Add amazing feature'`)- [ ] Implement file download from VPS
+
+4. Push to the branch (`git push origin feature/amazing-feature`)- [ ] Add backup creation and download
+
+5. Open a Pull Request- [ ] Setup monitoring metrics collection
+
+- [ ] Create dashboard for VPS status
+
+## License- [ ] Implement alert system for errors
+
+- [ ] Add database backup functionality
+
+This project is licensed under the MIT License - see the LICENSE file for details.- [ ] Create scheduled backup mechanism
+
+
+
+## Author### Additional Features (Future)
+
+
+
+**Vladimir Gavrilenko (Vova4o)**- [ ] Multi-server deployment support
+
+- GitHub: [@Vova4o](https://github.com/Vova4o)- [ ] Load balancer configuration
+
+- [ ] Docker container deployment option
+
+## Support- [ ] Kubernetes integration
+
+- [ ] CI/CD pipeline integration
+
+If you encounter any issues or have questions:- [ ] Zero-downtime deployment
+
+- Open an issue on GitHub- [ ] A/B testing support
+
+- Check existing issues for solutions- [ ] Environment variable management
+
+- Review the [IMPLEMENTATION.md](IMPLEMENTATION.md) for current status- [ ] Secrets management integration
+
+- [ ] Cost estimation and tracking
+
+## Roadmap- [ ] Auto-scaling configuration
+
+- [ ] Database provisioning and migration
+
+### Phase 1: VPS Creation ✅ COMPLETE
+
+- [x] DigitalOcean integration## Examples
+
+- [x] VPS creation with firewall
+
+- [x] SSH key management### Deploy a Go Web Application
+
+- [x] Automatic system updates
+
+- [x] SSH connection```bash
+
+./vpssetup deploy \
+
+### Phase 2: Application Deployment 🚧 IN PROGRESS  --provider digitalocean \
+
+- [ ] File upload via SCP/SFTP  --region nyc3 \
+
+- [ ] NGINX configuration  --domain myapp.example.com \
+
+- [ ] SSL certificate setup (Let's Encrypt)  --project ./my-go-app \
+
+- [ ] Application deployment scripts  --port 8080
+
+`````
+
+### Phase 3: Management & Monitoring
+
+- [ ] Log retrieval### Deploy a Node.js Application
+
+- [ ] Status monitoring
+
+- [ ] VPS destruction/cleanup```bash
+
+- [ ] DNS management./vpssetup deploy \
+
+  --provider linode \
+
+### Phase 4: Multi-Provider Support --region us-east \
+
+- [ ] AWS EC2 --domain api.example.com \
+
+- [ ] Linode --project ./my-node-app \
+
+- [ ] Vultr --port 3000 \
+
+- [ ] Custom providers --runtime nodejs
+
+````
+
+---
+
+## Troubleshooting
+
+**Made with ❤️ to eliminate manual VPS configuration forever!**
+
+### Connection Issues
+
+```bash
+# Test SSH connection
+./vpssetup test-connection --config config.yaml
+
+# Verify SSH key
+./vpssetup verify-ssh
+````
+
+### SSL Certificate Issues
+
+```bash
+# Force SSL renewal
+./vpssetup ssl-renew --force
+
+# Check SSL status
+./vpssetup ssl-status
+```
+
+### Logs Not Accessible
+
+```bash
+# Check VPS status
+./vpssetup status
+
+# Test connection and permissions
+./vpssetup diagnose
+```
+
+## Security Considerations
+
+- SSH keys are used exclusively (no password authentication)
+- Automatic security updates can be enabled
+- Firewall rules restrict access to necessary ports only
+- SSL/TLS encryption for all web traffic
+- Secrets and API keys should be stored securely (use environment variables)
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+MIT License - See LICENSE file for details
+
+## Support
+
+For issues, questions, or contributions, please open an issue on GitHub.
+
+---
+
+**Note**: This project is designed for quick deployments and testing. For production environments, consider additional security hardening and monitoring solutions.

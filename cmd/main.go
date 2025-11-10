@@ -40,11 +40,22 @@ This tool automates everything: VPS creation, DNS setup, NGINX config, and SSL c
 				return fmt.Errorf("invalid config: %w", err)
 			}
 
-			// If profile not specified, ask user to select one interactively
-			if profile == "" && len(cfg.Profiles) > 1 {
-				profile, err = interactive.SelectProfile(cfg)
-				if err != nil {
-					return err
+			// If profile not specified, use default or ask user to select
+			if profile == "" {
+				if cfg.DefaultProfile != "" {
+					profile = cfg.DefaultProfile
+				} else if len(cfg.Profiles) == 1 {
+					// If only one profile exists, use it
+					for name := range cfg.Profiles {
+						profile = name
+						break
+					}
+				} else if len(cfg.Profiles) > 1 {
+					// Multiple profiles, ask user to select
+					profile, err = interactive.SelectProfile(cfg)
+					if err != nil {
+						return err
+					}
 				}
 			}
 
@@ -69,6 +80,13 @@ This tool automates everything: VPS creation, DNS setup, NGINX config, and SSL c
 		Short: "Test SSH connection to VPS",
 		Long:  `Establishes and validates SSH connection to the VPS instance.`,
 		RunE:  runConnect,
+	}
+
+	restartCmd = &cobra.Command{
+		Use:   "restart",
+		Short: "Restart the VPS",
+		Long:  `Reboots the VPS instance.`,
+		RunE:  runRestart,
 	}
 
 	deployCmd = &cobra.Command{
@@ -148,6 +166,14 @@ This tool automates everything: VPS creation, DNS setup, NGINX config, and SSL c
 		RunE:  runDNSList,
 	}
 
+	dnsRemoveCmd = &cobra.Command{
+		Use:   "remove [record-id]",
+		Short: "Remove DNS record",
+		Long:  `Removes a DNS record by ID.`,
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  runDNSRemove,
+	}
+
 	statusCmd = &cobra.Command{
 		Use:   "status",
 		Short: "Check VPS status",
@@ -162,11 +188,45 @@ This tool automates everything: VPS creation, DNS setup, NGINX config, and SSL c
 		RunE:  runDestroy,
 	}
 
+	hardenCmd = &cobra.Command{
+		Use:   "harden",
+		Short: "Apply security hardening to VPS",
+		Long:  `Performs security hardening on the VPS including system updates, fail2ban setup, SSH security, and automatic updates.`,
+		RunE:  runHarden,
+	}
+
 	initCmd = &cobra.Command{
 		Use:   "init",
 		Short: "Interactive setup wizard",
 		Long:  `Run an interactive wizard to create a new configuration profile.`,
 		RunE:  runInit,
+	}
+
+	nginxCmd = &cobra.Command{
+		Use:   "nginx",
+		Short: "Manage NGINX configuration",
+		Long:  `Configure NGINX web server on your VPS with support for static sites, reverse proxy, and PHP applications.`,
+	}
+
+	nginxSetupCmd = &cobra.Command{
+		Use:   "setup",
+		Short: "Setup NGINX configuration",
+		Long:  `Interactive wizard to create and deploy NGINX configuration for your application.`,
+		RunE:  runNginxSetup,
+	}
+
+	nginxTestCmd = &cobra.Command{
+		Use:   "test",
+		Short: "Test NGINX configuration",
+		Long:  `Test the NGINX configuration for syntax errors.`,
+		RunE:  runNginxTest,
+	}
+
+	nginxReloadCmd = &cobra.Command{
+		Use:   "reload",
+		Short: "Reload NGINX",
+		Long:  `Reload NGINX to apply configuration changes.`,
+		RunE:  runNginxReload,
 	}
 )
 
@@ -185,19 +245,25 @@ func init() {
 	sslCmd.AddCommand(sslInstallCmd, sslRenewCmd, sslStatusCmd)
 
 	// Add DNS subcommands
-	dnsCmd.AddCommand(dnsCreateCmd, dnsListCmd)
+	dnsCmd.AddCommand(dnsCreateCmd, dnsListCmd, dnsRemoveCmd)
+
+	// Add NGINX subcommands
+	nginxCmd.AddCommand(nginxSetupCmd, nginxTestCmd, nginxReloadCmd)
 
 	// Add all commands to root
 	rootCmd.AddCommand(
 		initCmd,
 		setupCmd,
 		connectCmd,
+		restartCmd,
 		deployCmd,
 		uploadCmd,
 		logsCmd,
 		sslCmd,
 		dnsCmd,
+		nginxCmd,
 		statusCmd,
+		hardenCmd,
 		destroyCmd,
 	)
 }

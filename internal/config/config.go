@@ -24,10 +24,14 @@ type Profile struct {
 
 // VPSConfig holds VPS provider configuration
 type VPSConfig struct {
-	Provider string `mapstructure:"provider"`
-	APIKey   string `mapstructure:"apikey"`
-	Region   string `mapstructure:"region"`
-	Size     string `mapstructure:"size"`
+	Provider   string `mapstructure:"provider"`
+	APIKey     string `mapstructure:"apikey"`
+	Region     string `mapstructure:"region"`
+	Size       string `mapstructure:"size"`
+	InstanceID string `mapstructure:"instanceid"`
+	PublicIP   string `mapstructure:"publicip"`
+	Name       string `mapstructure:"name"`
+	CreatedAt  string `mapstructure:"createdat"`
 }
 
 // DomainConfig holds domain configuration
@@ -169,4 +173,20 @@ func (p *Profile) FullDomain() string {
 		return p.Domain.Name
 	}
 	return fmt.Sprintf("%s.%s", p.Domain.Subdomain, p.Domain.Name)
+}
+
+// Save saves the configuration back to the file
+func (c *Config) Save(configPath string) error {
+	if configPath == "" {
+		configPath = "./config.yaml"
+	}
+
+	viper.Set("profiles", c.Profiles)
+	viper.Set("default_profile", c.DefaultProfile)
+
+	if err := viper.WriteConfigAs(configPath); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	return nil
 }

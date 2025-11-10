@@ -245,13 +245,20 @@ func AskInput(message, defaultValue string) (string, error) {
 	return result, err
 }
 
-// AskDeploymentDetails asks for deployment-specific details
-func AskDeploymentDetails(profile *config.Profile) error {
-	fmt.Println("\n🚀 Deployment Configuration")
-	fmt.Println("   These settings are specific to this deployment")
+// AskSelect prompts for selection from a list
+func AskSelect(message string, options []string) (string, error) {
+	var result string
+	prompt := &survey.Select{
+		Message: message,
+		Options: options,
+	}
+	err := survey.AskOne(prompt, &result)
+	return result, err
+}
 
-	// VPS Configuration
-	fmt.Println("📡 VPS Configuration")
+// AskVPSConfiguration asks for VPS configuration (region and size only)
+func AskVPSConfiguration(profile *config.Profile) error {
+	fmt.Println(" VPS Configuration")
 
 	s := ShowSpinner("Fetching available regions from DigitalOcean...")
 	regions, err := fetchDigitalOceanRegions(profile.VPS.APIKey)
@@ -290,6 +297,19 @@ func AskDeploymentDetails(profile *config.Profile) error {
 		Help:    "Start small, you can always upgrade later",
 	}
 	if err := survey.AskOne(sizePrompt, &profile.VPS.Size); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// AskDeploymentDetails asks for deployment-specific details
+func AskDeploymentDetails(profile *config.Profile) error {
+	fmt.Println("\n🚀 Deployment Configuration")
+	fmt.Println("   These settings are specific to this deployment")
+
+	// VPS Configuration - reuse the function
+	if err := AskVPSConfiguration(profile); err != nil {
 		return err
 	}
 
