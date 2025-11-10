@@ -145,12 +145,14 @@ VPSSetup/
 
 ### Phase 1: Setup
 
-- [ ] Design CLI interface and command structure
-- [ ] Implement configuration file parser (YAML/JSON)
-- [ ] Create VPS provider abstraction layer
-- [ ] Add support for multiple VPS providers (DigitalOcean, Linode, Vultr)
-- [ ] Implement VPS instance creation
-- [ ] Setup SSH key management
+- [x] Design CLI interface and command structure ✅
+- [x] Implement configuration file parser (YAML/JSON) ✅
+- [x] Create VPS provider abstraction layer ✅
+- [x] Setup SSH key management ✅ (automatic generation during `init`)
+- [x] Add interactive setup wizard ✅
+- [x] Integrate DigitalOcean API for regions/sizes ✅
+- [ ] Add support for multiple VPS providers (DigitalOcean, Linode, Vultr) ⚠️ (only DigitalOcean partially done)
+- [ ] Implement VPS instance creation (via API)
 - [ ] Add firewall rules configuration (ports 80, 443, 22)
 - [ ] Implement system updates and basic security hardening
 
