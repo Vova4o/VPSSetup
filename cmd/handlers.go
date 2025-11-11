@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -769,11 +770,101 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("📊 Checking VPS status...\n")
 	fmt.Printf("   Profile: %s\n", profile)
-	fmt.Printf("   Provider: %s\n", prof.VPS.Provider)
+	fmt.Printf("   Provider: %s\n\n", prof.VPS.Provider)
 
-	// TODO: Implement status check
-	fmt.Println("❌ Status not implemented yet")
+	// Check if instance exists
+	if prof.VPS.InstanceID == "" {
+		interactive.Warning("No VPS instance found in this profile")
+		interactive.Info("Run 'vpssetup deploy' to create a VPS instance")
+		return nil
+	}
+
+	// Create provider and get instance information
+	ctx := context.Background()
+	var instance *provider.Instance
+
+	switch prof.VPS.Provider {
+	case "digitalocean":
+		vpsProvider := provider.NewDigitalOceanProvider(prof.VPS.APIKey)
+		var err error
+		instance, err = vpsProvider.GetInstance(ctx, prof.VPS.InstanceID)
+		if err != nil {
+			interactive.Error(fmt.Sprintf("Failed to get instance status: %v", err))
+			return err
+		}
+	case "sweb":
+		// Sweb doesn't have VPS API yet, show config info only
+		interactive.Warning("Sweb VPS status check not available via API")
+		interactive.Info("Showing configuration information only")
+		instance = &provider.Instance{
+			ID:        prof.VPS.InstanceID,
+			Name:      prof.VPS.Name,
+			PublicIP:  prof.VPS.PublicIP,
+			Status:    "unknown",
+			Region:    prof.VPS.Region,
+			Size:      prof.VPS.Size,
+			CreatedAt: prof.VPS.CreatedAt,
+		}
+	default:
+		return fmt.Errorf("unsupported provider: %s", prof.VPS.Provider)
+	}
+
+	// Display status information
+	interactive.Success("VPS Instance Information")
+	fmt.Printf("\n")
+	fmt.Printf("  🏷️  Name:       %s\n", instance.Name)
+	fmt.Printf("  🆔 ID:         %s\n", instance.ID)
+	fmt.Printf("  📍 Status:     %s\n", formatStatus(instance.Status))
+	fmt.Printf("  🌐 Public IP:  %s\n", instance.PublicIP)
+	if instance.PrivateIP != "" {
+		fmt.Printf("  🔒 Private IP: %s\n", instance.PrivateIP)
+	}
+	fmt.Printf("  📍 Region:     %s\n", instance.Region)
+	fmt.Printf("  💾 Size:       %s\n", instance.Size)
+	if instance.CreatedAt != "" {
+		fmt.Printf("  📅 Created:    %s\n", instance.CreatedAt)
+	}
+
+	// Display domain information if available
+	if prof.Domain.Name != "" {
+		fmt.Printf("\n")
+		interactive.Success("Domain Configuration")
+		fmt.Printf("\n")
+		fmt.Printf("  🌍 Domain:     %s\n", prof.FullDomain())
+		if prof.Domain.DNSProvider != "" {
+			fmt.Printf("  📡 DNS:        %s\n", prof.Domain.DNSProvider)
+		}
+	}
+
+	// Display project information if available
+	if prof.Project.Path != "" {
+		fmt.Printf("\n")
+		interactive.Success("Project Configuration")
+		fmt.Printf("\n")
+		if prof.Project.Runtime != "" {
+			fmt.Printf("  ⚙️  Runtime:    %s\n", prof.Project.Runtime)
+		}
+		if prof.Project.Port > 0 {
+			fmt.Printf("  🔌 Port:       %d\n", prof.Project.Port)
+		}
+	}
+
+	fmt.Printf("\n")
 	return nil
+}
+
+// formatStatus formats the instance status with emoji
+func formatStatus(status string) string {
+	switch status {
+	case "active", "running":
+		return "🟢 " + status
+	case "new", "pending":
+		return "🟡 " + status
+	case "off", "stopped":
+		return "🔴 " + status
+	default:
+		return "⚪ " + status
+	}
 }
 
 // runDestroy handles the destroy command
