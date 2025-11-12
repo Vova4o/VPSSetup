@@ -10,12 +10,24 @@ import (
 
 	"github.com/Vova4o/VPSSetup/internal/config"
 	"github.com/Vova4o/VPSSetup/internal/connection"
+	"github.com/Vova4o/VPSSetup/internal/dns"
 	"github.com/Vova4o/VPSSetup/internal/interactive"
+	"github.com/Vova4o/VPSSetup/internal/nginx"
 	"github.com/Vova4o/VPSSetup/internal/setup"
+	"github.com/Vova4o/VPSSetup/internal/ssl"
 	"github.com/Vova4o/VPSSetup/pkg/provider"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
+
+// sshCommandExecutor adapts SSHClient to ssl.SSHExecutor interface
+type sshCommandExecutor struct {
+	client *connection.SSHClient
+}
+
+func (e *sshCommandExecutor) RunCommand(cmd string) (string, error) {
+	return e.client.ExecuteCommand(cmd)
+}
 
 // expandPath expands ~ to home directory
 func expandPath(path string) (string, error) {
@@ -407,16 +419,87 @@ func runSSLInstall(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("🔒 Installing SSL certificate for: %s\n", prof.FullDomain())
+	// Ensure domain is configured
+	domain := prof.FullDomain()
+	if domain == "" {
+		return fmt.Errorf("domain not configured in profile")
+	}
+
+	// Ensure email is configured
+	if prof.SSL.Email == "" {
+		email, err := interactive.AskInput("Enter email for Let's Encrypt notifications:", "")
+		if err != nil {
+			return err
+		}
+		prof.SSL.Email = email
+
+		// Save updated config
+		if err := cfg.Save(cfgFile); err != nil {
+			interactive.Warning("Failed to save email to config")
+		}
+	}
+
+	fmt.Printf("🔒 Installing SSL certificate for: %s\n", domain)
 	fmt.Printf("   Email: %s\n", prof.SSL.Email)
+	fmt.Println()
 
 	if dryRun {
 		fmt.Println("✓ Dry run complete - no SSL installed")
 		return nil
 	}
 
-	// TODO: Implement SSL installation
-	fmt.Println("❌ SSL install not implemented yet")
+	// Confirm before proceeding
+	confirmed, err := interactive.ConfirmAction("Install SSL certificate?")
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		interactive.Info("Cancelled")
+		return nil
+	}
+
+	// Expand SSH key path
+	keyPath, err := expandPath(prof.SSH.KeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to expand key path: %w", err)
+	}
+
+	// Connect to VPS
+	spinner := interactive.ShowSpinner("Connecting to VPS...")
+	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
+	if err != nil {
+		spinner.Stop()
+		interactive.Error("Failed to create SSH client")
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+
+	if err := sshClient.Connect(); err != nil {
+		spinner.Stop()
+		interactive.Error("Failed to connect to VPS")
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer sshClient.Close()
+	spinner.Stop()
+
+	// Create SSL service wrapper
+	sslService := ssl.NewService(&sshCommandExecutor{client: sshClient})
+
+	// Install SSL certificate
+	interactive.Info("This may take a few minutes...")
+	sslConfig := ssl.Config{
+		Domain:    domain,
+		Email:     prof.SSL.Email,
+		AutoRenew: prof.SSL.AutoRenew,
+	}
+
+	if err := sslService.Install(sslConfig); err != nil {
+		interactive.Error("Failed to install SSL certificate")
+		return err
+	}
+
+	interactive.Success("SSL certificate installed successfully! 🎉")
+	interactive.Info(fmt.Sprintf("Your site is now available at: https://%s", domain))
+
 	return nil
 }
 
@@ -427,15 +510,63 @@ func runSSLRenew(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("🔄 Renewing SSL certificate for: %s\n", prof.FullDomain())
+	domain := prof.FullDomain()
+	if domain == "" {
+		return fmt.Errorf("domain not configured in profile")
+	}
+
+	fmt.Printf("🔄 Renewing SSL certificate for: %s\n", domain)
+	fmt.Println()
 
 	if dryRun {
 		fmt.Println("✓ Dry run complete - no SSL renewed")
 		return nil
 	}
 
-	// TODO: Implement SSL renewal
-	fmt.Println("❌ SSL renew not implemented yet")
+	// Confirm before proceeding
+	confirmed, err := interactive.ConfirmAction("Renew SSL certificate?")
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		interactive.Info("Cancelled")
+		return nil
+	}
+
+	// Expand SSH key path
+	keyPath, err := expandPath(prof.SSH.KeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to expand key path: %w", err)
+	}
+
+	// Connect to VPS
+	spinner := interactive.ShowSpinner("Connecting to VPS...")
+	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
+	if err != nil {
+		spinner.Stop()
+		interactive.Error("Failed to create SSH client")
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+
+	if err := sshClient.Connect(); err != nil {
+		spinner.Stop()
+		interactive.Error("Failed to connect to VPS")
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer sshClient.Close()
+	spinner.Stop()
+
+	// Create SSL service
+	sslService := ssl.NewService(&sshCommandExecutor{client: sshClient})
+
+	// Renew certificate
+	if err := sslService.Renew(domain); err != nil {
+		interactive.Error("Failed to renew SSL certificate")
+		return err
+	}
+
+	interactive.Success("SSL certificate renewed successfully! 🎉")
+
 	return nil
 }
 
@@ -446,10 +577,87 @@ func runSSLStatus(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("📊 Checking SSL status for: %s\n", prof.FullDomain())
+	domain := prof.FullDomain()
+	if domain == "" {
+		return fmt.Errorf("domain not configured in profile")
+	}
 
-	// TODO: Implement SSL status check
-	fmt.Println("❌ SSL status not implemented yet")
+	fmt.Printf("📊 Checking SSL status for: %s\n", domain)
+	fmt.Println()
+
+	// Expand SSH key path
+	keyPath, err := expandPath(prof.SSH.KeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to expand key path: %w", err)
+	}
+
+	// Connect to VPS
+	spinner := interactive.ShowSpinner("Connecting to VPS...")
+	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
+	if err != nil {
+		spinner.Stop()
+		interactive.Error("Failed to create SSH client")
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+
+	if err := sshClient.Connect(); err != nil {
+		spinner.Stop()
+		interactive.Error("Failed to connect to VPS")
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer sshClient.Close()
+	spinner.Stop()
+
+	// Create SSL service
+	sslService := ssl.NewService(&sshCommandExecutor{client: sshClient})
+
+	// Get certificate status
+	spinner = interactive.ShowSpinner("Checking certificate...")
+	certInfo, err := sslService.Status(domain)
+	spinner.Stop()
+
+	if err != nil {
+		interactive.Error(fmt.Sprintf("Failed to get SSL status: %v", err))
+		interactive.Info("Certificate may not be installed yet. Run: vpssetup ssl install")
+		return err
+	}
+
+	// Display certificate information
+	interactive.Success("SSL Certificate Information")
+	fmt.Printf("\n")
+	fmt.Printf("  🌐 Domain:       %s\n", certInfo.Domain)
+	fmt.Printf("  🏢 Issuer:       %s\n", certInfo.Issuer)
+	fmt.Printf("  📅 Valid From:   %s\n", certInfo.ValidFrom)
+	fmt.Printf("  📅 Valid Until:  %s\n", certInfo.ValidUntil)
+
+	// Color code days left
+	if certInfo.DaysLeft > 30 {
+		fmt.Printf("  ⏰ Days Left:    🟢 %d days\n", certInfo.DaysLeft)
+	} else if certInfo.DaysLeft > 7 {
+		fmt.Printf("  ⏰ Days Left:    🟡 %d days (consider renewing soon)\n", certInfo.DaysLeft)
+	} else {
+		fmt.Printf("  ⏰ Days Left:    🔴 %d days (URGENT: renew now!)\n", certInfo.DaysLeft)
+	}
+
+	// Check auto-renewal status
+	fmt.Printf("\n")
+	autoRenew, err := sslService.CheckAutoRenewal()
+	if err == nil {
+		if autoRenew {
+			fmt.Printf("  🔄 Auto-renewal: 🟢 Enabled\n")
+		} else {
+			fmt.Printf("  🔄 Auto-renewal: 🔴 Disabled\n")
+		}
+	}
+
+	fmt.Printf("\n")
+
+	// Warning if expiring soon
+	if certInfo.DaysLeft <= 30 {
+		interactive.Warning("Certificate is expiring soon!")
+		interactive.Info("Run: vpssetup ssl renew")
+	}
+
 	return nil
 }
 
@@ -550,26 +758,23 @@ func runDNSCreate(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Create DNS provider
-	if prof.Domain.DNSProvider != "sweb.ru" {
-		interactive.Error(fmt.Sprintf("Unsupported DNS provider: %s", prof.Domain.DNSProvider))
-		interactive.Info("Currently only sweb.ru is supported")
-		return fmt.Errorf("unsupported DNS provider: %s", prof.Domain.DNSProvider)
+	// Create DNS service
+	dnsService, err := dns.NewService(prof.Domain.DNSProvider, prof.Domain.DNSAPIKey, prof.Domain.Name)
+	if err != nil {
+		interactive.Error(fmt.Sprintf("Failed to create DNS service: %v", err))
+		return err
 	}
-
-	dnsProvider := provider.NewSWebProvider(prof.Domain.DNSAPIKey)
 
 	// Create DNS record
 	spinner := interactive.ShowSpinner("Creating DNS record...")
-	record := provider.DNSRecord{
-		Domain: prof.Domain.Name,
-		Name:   recordName,
-		Type:   recordType,
-		Value:  recordValue,
-		TTL:    3600,
+	record := dns.Record{
+		Name:  recordName,
+		Type:  recordType,
+		Value: recordValue,
+		TTL:   3600,
 	}
 
-	err = dnsProvider.AddDNSRecord(cmd.Context(), record)
+	err = dnsService.CreateRecord(cmd.Context(), record)
 	spinner.Stop()
 
 	if err != nil {
@@ -601,18 +806,16 @@ func runDNSList(cmd *cobra.Command, args []string) error {
 	fmt.Printf("   Provider: %s\n", prof.Domain.DNSProvider)
 	fmt.Println()
 
-	// Create DNS provider
-	if prof.Domain.DNSProvider != "sweb.ru" {
-		interactive.Error(fmt.Sprintf("Unsupported DNS provider: %s", prof.Domain.DNSProvider))
-		interactive.Info("Currently only sweb.ru is supported")
-		return fmt.Errorf("unsupported DNS provider: %s", prof.Domain.DNSProvider)
+	// Create DNS service
+	dnsService, err := dns.NewService(prof.Domain.DNSProvider, prof.Domain.DNSAPIKey, prof.Domain.Name)
+	if err != nil {
+		interactive.Error(fmt.Sprintf("Failed to create DNS service: %v", err))
+		return err
 	}
-
-	dnsProvider := provider.NewSWebProvider(prof.Domain.DNSAPIKey)
 
 	// List DNS records
 	spinner := interactive.ShowSpinner("Fetching DNS records...")
-	records, err := dnsProvider.ListDNSRecords(cmd.Context(), prof.Domain.Name)
+	records, err := dnsService.ListRecords(cmd.Context())
 	spinner.Stop()
 
 	if err != nil {
@@ -663,28 +866,23 @@ func runDNSRemove(cmd *cobra.Command, args []string) error {
 	fmt.Printf("   Provider: %s\n", prof.Domain.DNSProvider)
 	fmt.Println()
 
-	var recordType string  // Track record type for proper deletion
-	var recordName string  // Track record name for deletion
-	var recordValue string // Track record value for deletion
-
-	// Create DNS provider
-	if prof.Domain.DNSProvider != "sweb.ru" {
-		interactive.Error(fmt.Sprintf("Unsupported DNS provider: %s", prof.Domain.DNSProvider))
-		interactive.Info("Currently only sweb.ru is supported")
-		return fmt.Errorf("unsupported DNS provider: %s", prof.Domain.DNSProvider)
+	// Create DNS service
+	dnsService, err := dns.NewService(prof.Domain.DNSProvider, prof.Domain.DNSAPIKey, prof.Domain.Name)
+	if err != nil {
+		interactive.Error(fmt.Sprintf("Failed to create DNS service: %v", err))
+		return err
 	}
 
-	dnsProvider := provider.NewSWebProvider(prof.Domain.DNSAPIKey)
-
 	// Get record ID from args or list and ask
-	var recordID string
-	var selectedRecord *provider.DNSRecord // Keep full record for deletion
+	var selectedRecord *dns.Record
 	if len(args) > 0 {
-		recordID = args[0]
+		// Record ID provided, we'll need to fetch the record details
+		// For now, we'll just use the ID
+		selectedRecord = &dns.Record{ID: args[0]}
 	} else {
 		// List records first
 		spinner := interactive.ShowSpinner("Fetching DNS records...")
-		records, err := dnsProvider.ListDNSRecords(cmd.Context(), prof.Domain.Name)
+		records, err := dnsService.ListRecords(cmd.Context())
 		spinner.Stop()
 
 		if err != nil {
@@ -699,7 +897,7 @@ func runDNSRemove(cmd *cobra.Command, args []string) error {
 
 		// Build options list and keep record references
 		options := make([]string, len(records))
-		recordMap := make(map[string]*provider.DNSRecord)
+		recordMap := make(map[string]*dns.Record)
 		for i, record := range records {
 			name := record.Name
 			if name == "" || name == "@" {
@@ -717,19 +915,14 @@ func runDNSRemove(cmd *cobra.Command, args []string) error {
 
 		// Get the full record from the map
 		selectedRecord = recordMap[selected]
-		if selectedRecord != nil {
-			recordID = selectedRecord.ID
-			recordType = selectedRecord.Type
-			recordName = selectedRecord.Name
-			recordValue = selectedRecord.Value
-		} else {
+		if selectedRecord == nil {
 			return fmt.Errorf("invalid selection")
 		}
 	}
 
-	fmt.Printf("   Record ID: %s\n", recordID)
-	if recordType != "" {
-		fmt.Printf("   Record Type: %s\n", recordType)
+	fmt.Printf("   Record ID: %s\n", selectedRecord.ID)
+	if selectedRecord.Type != "" {
+		fmt.Printf("   Record Type: %s\n", selectedRecord.Type)
 	}
 	fmt.Println()
 
@@ -749,7 +942,7 @@ func runDNSRemove(cmd *cobra.Command, args []string) error {
 
 	// Delete DNS record
 	spinner := interactive.ShowSpinner("Removing DNS record...")
-	err = dnsProvider.DeleteDNSRecord(cmd.Context(), prof.Domain.Name, recordID, recordType, recordName, recordValue)
+	err = dnsService.DeleteRecord(cmd.Context(), *selectedRecord)
 	spinner.Stop()
 
 	if err != nil {
@@ -758,6 +951,167 @@ func runDNSRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	interactive.Success("DNS record removed successfully! 🎉")
+	return nil
+}
+
+// runDNSUpdate handles the dns update command
+func runDNSUpdate(cmd *cobra.Command, args []string) error {
+	prof, err := cfg.GetProfile(profile)
+	if err != nil {
+		return err
+	}
+
+	// Ensure domain is configured
+	if err := ensureDomainConfigured(prof); err != nil {
+		return err
+	}
+
+	fmt.Printf("✏️  Updating DNS record for: %s\n", prof.Domain.Name)
+	fmt.Printf("   Provider: %s\n", prof.Domain.DNSProvider)
+	fmt.Println()
+
+	// Create DNS service
+	dnsService, err := dns.NewService(prof.Domain.DNSProvider, prof.Domain.DNSAPIKey, prof.Domain.Name)
+	if err != nil {
+		interactive.Error(fmt.Sprintf("Failed to create DNS service: %v", err))
+		return err
+	}
+
+	// List records first
+	spinner := interactive.ShowSpinner("Fetching DNS records...")
+	records, err := dnsService.ListRecords(cmd.Context())
+	spinner.Stop()
+
+	if err != nil {
+		interactive.Error("Failed to fetch DNS records")
+		return fmt.Errorf("failed to list DNS records: %w", err)
+	}
+
+	if len(records) == 0 {
+		interactive.Info("No DNS records found")
+		return nil
+	}
+
+	// Build options list and keep record references
+	options := make([]string, len(records))
+	recordMap := make(map[string]*dns.Record)
+	for i, record := range records {
+		name := record.Name
+		if name == "" || name == "@" {
+			name = "@"
+		}
+		optionStr := fmt.Sprintf("%s: %s %s -> %s", record.ID, name, record.Type, record.Value)
+		options[i] = optionStr
+		recordMap[optionStr] = &records[i]
+	}
+
+	selected, err := interactive.AskSelect("Select record to update:", options)
+	if err != nil {
+		return err
+	}
+
+	// Get the full record from the map
+	selectedRecord := recordMap[selected]
+	if selectedRecord == nil {
+		return fmt.Errorf("invalid selection")
+	}
+
+	fmt.Printf("\n   Current Record:\n")
+	fmt.Printf("   Type:  %s\n", selectedRecord.Type)
+	fmt.Printf("   Name:  %s\n", selectedRecord.Name)
+	fmt.Printf("   Value: %s\n", selectedRecord.Value)
+	fmt.Println()
+
+	// Ask what to update
+	updateOptions := []string{
+		"Update Name/Subdomain",
+		"Update Value/IP Address",
+		"Update Both",
+	}
+	updateChoice, err := interactive.AskSelect("What would you like to update?", updateOptions)
+	if err != nil {
+		return err
+	}
+
+	updatedRecord := *selectedRecord // Copy the record
+
+	switch updateChoice {
+	case "Update Name/Subdomain":
+		newName, err := interactive.AskInput("Enter new name/subdomain:", selectedRecord.Name)
+		if err != nil {
+			return err
+		}
+		updatedRecord.Name = newName
+
+	case "Update Value/IP Address":
+		newValue, err := interactive.AskInput("Enter new value/IP:", selectedRecord.Value)
+		if err != nil {
+			return err
+		}
+		updatedRecord.Value = newValue
+
+	case "Update Both":
+		newName, err := interactive.AskInput("Enter new name/subdomain:", selectedRecord.Name)
+		if err != nil {
+			return err
+		}
+		updatedRecord.Name = newName
+
+		newValue, err := interactive.AskInput("Enter new value/IP:", selectedRecord.Value)
+		if err != nil {
+			return err
+		}
+		updatedRecord.Value = newValue
+	}
+
+	fmt.Printf("\n   New Record:\n")
+	fmt.Printf("   Type:  %s\n", updatedRecord.Type)
+	fmt.Printf("   Name:  %s\n", updatedRecord.Name)
+	fmt.Printf("   Value: %s\n", updatedRecord.Value)
+	fmt.Println()
+
+	if dryRun {
+		fmt.Println("✓ Dry run complete - no DNS record updated")
+		return nil
+	}
+
+	confirmed, err := interactive.ConfirmAction("Update this DNS record?")
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		interactive.Info("Cancelled")
+		return nil
+	}
+
+	// Convert to dns.Record format
+	oldRecord := dns.Record{
+		ID:    selectedRecord.ID,
+		Type:  selectedRecord.Type,
+		Name:  selectedRecord.Name,
+		Value: selectedRecord.Value,
+		TTL:   selectedRecord.TTL,
+	}
+
+	newRecord := dns.Record{
+		Type:  updatedRecord.Type,
+		Name:  updatedRecord.Name,
+		Value: updatedRecord.Value,
+		TTL:   updatedRecord.TTL,
+	}
+
+	// Update DNS record (delete + recreate)
+	spinner = interactive.ShowSpinner("Updating DNS record...")
+	err = dnsService.UpdateRecord(cmd.Context(), oldRecord, newRecord)
+	spinner.Stop()
+
+	if err != nil {
+		interactive.Error("Failed to update DNS record")
+		return fmt.Errorf("failed to update DNS record: %w", err)
+	}
+
+	interactive.Success("DNS record updated successfully! 🎉")
+
 	return nil
 }
 
@@ -1071,9 +1425,34 @@ func runNginxSetup(cmd *cobra.Command, args []string) error {
 	if !installNginx {
 		interactive.Info("Skipping NGINX installation")
 	} else {
-		if err := installNginxPackage(prof); err != nil {
-			return err
+		// Expand SSH key path
+		keyPath, err := expandPath(prof.SSH.KeyPath)
+		if err != nil {
+			return fmt.Errorf("failed to expand SSH key path: %w", err)
 		}
+
+		// Connect to VPS
+		spinner := interactive.ShowSpinner("Installing NGINX...")
+		sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
+		if err != nil {
+			spinner.Stop()
+			return fmt.Errorf("failed to create SSH client: %w", err)
+		}
+
+		if err := sshClient.Connect(); err != nil {
+			spinner.Stop()
+			return fmt.Errorf("failed to connect to VPS: %w", err)
+		}
+		defer sshClient.Close()
+
+		// Use nginx service
+		nginxSvc := nginx.NewService(&sshCommandExecutor{client: sshClient})
+		if err := nginxSvc.Install(); err != nil {
+			spinner.Stop()
+			return fmt.Errorf("failed to install nginx: %w", err)
+		}
+		spinner.Stop()
+		interactive.Success("NGINX installed successfully")
 	}
 
 	// Ask for domain name
@@ -1170,9 +1549,31 @@ func runNginxSetup(cmd *cobra.Command, args []string) error {
 	}
 
 	// Deploy configuration
-	if err := deployNginxConfig(prof, domain, configContent, rootPath, configType); err != nil {
-		return err
+	// Expand SSH key path and connect
+	keyPath, err := expandPath(prof.SSH.KeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to expand SSH key path: %w", err)
 	}
+
+	spinner = interactive.ShowSpinner("Deploying configuration to VPS...")
+	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
+	if err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+
+	if err := sshClient.Connect(); err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to connect to VPS: %w", err)
+	}
+	defer sshClient.Close()
+
+	nginxSvc := nginx.NewService(&sshCommandExecutor{client: sshClient})
+	if err := nginxSvc.Deploy(domain, configContent, rootPath, configType); err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to deploy nginx config: %w", err)
+	}
+	spinner.Stop()
 
 	interactive.Success("NGINX configuration deployed successfully! 🎉")
 	fmt.Println()
@@ -1582,132 +1983,7 @@ server {
 	return config
 }
 
-func installNginxPackage(prof *config.Profile) error {
-	spinner := interactive.ShowSpinner("Installing NGINX...")
-
-	keyPath, err := expandPath(prof.SSH.KeyPath)
-	if err != nil {
-		spinner.Stop()
-		return fmt.Errorf("failed to expand SSH key path: %w", err)
-	}
-
-	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
-	if err != nil {
-		spinner.Stop()
-		return fmt.Errorf("failed to create SSH client: %w", err)
-	}
-
-	if err := sshClient.Connect(); err != nil {
-		spinner.Stop()
-		return fmt.Errorf("failed to connect to VPS: %w", err)
-	}
-	defer sshClient.Close()
-
-	commands := []string{
-		"apt-get update",
-		"DEBIAN_FRONTEND=noninteractive apt-get install -y nginx",
-		"systemctl enable nginx",
-		"systemctl start nginx",
-	}
-
-	for _, cmd := range commands {
-		if _, err := sshClient.ExecuteCommand(cmd); err != nil {
-			spinner.Stop()
-			return fmt.Errorf("failed to execute command '%s': %w", cmd, err)
-		}
-	}
-
-	spinner.Stop()
-	interactive.Success("NGINX installed successfully")
-	return nil
-}
-
-func deployNginxConfig(prof *config.Profile, domain, configContent, rootPath, configType string) error {
-	spinner := interactive.ShowSpinner("Deploying configuration to VPS...")
-
-	keyPath, err := expandPath(prof.SSH.KeyPath)
-	if err != nil {
-		spinner.Stop()
-		return fmt.Errorf("failed to expand SSH key path: %w", err)
-	}
-
-	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
-	if err != nil {
-		spinner.Stop()
-		return fmt.Errorf("failed to create SSH client: %w", err)
-	}
-
-	if err := sshClient.Connect(); err != nil {
-		spinner.Stop()
-		return fmt.Errorf("failed to connect to VPS: %w", err)
-	}
-	defer sshClient.Close()
-
-	// Create config file
-	configPath := fmt.Sprintf("/etc/nginx/sites-available/%s", domain)
-
-	// Escape single quotes in config content
-	escapedConfig := strings.ReplaceAll(configContent, "'", "'\\''")
-
-	uploadCmd := fmt.Sprintf("echo '%s' | sudo tee %s > /dev/null", escapedConfig, configPath)
-	if _, err := sshClient.ExecuteCommand(uploadCmd); err != nil {
-		spinner.Stop()
-		return fmt.Errorf("failed to upload config: %w", err)
-	}
-
-	// Create symlink
-	symlinkPath := fmt.Sprintf("/etc/nginx/sites-enabled/%s", domain)
-	symlinkCmd := fmt.Sprintf("sudo ln -sf %s %s", configPath, symlinkPath)
-	if _, err := sshClient.ExecuteCommand(symlinkCmd); err != nil {
-		spinner.Stop()
-		return fmt.Errorf("failed to create symlink: %w", err)
-	}
-
-	// Create document root if needed
-	if rootPath != "" && (configType == "static" || configType == "php") {
-		mkdirCmd := fmt.Sprintf("sudo mkdir -p %s && sudo chown -R www-data:www-data %s", rootPath, rootPath)
-		if _, err := sshClient.ExecuteCommand(mkdirCmd); err != nil {
-			spinner.Stop()
-			return fmt.Errorf("failed to create document root: %w", err)
-		}
-
-		// Create a default index.html for static sites
-		if configType == "static" {
-			indexContent := fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head>
-    <title>Welcome</title>
-</head>
-<body>
-    <h1>Welcome to %s</h1>
-    <p>Your site is now running!</p>
-</body>
-</html>`, domain)
-			escapedIndex := strings.ReplaceAll(indexContent, "'", "'\\''")
-			indexCmd := fmt.Sprintf("echo '%s' | sudo tee %s/index.html > /dev/null", escapedIndex, rootPath)
-			sshClient.ExecuteCommand(indexCmd)
-		}
-	}
-
-	// Test configuration
-	testCmd := "sudo nginx -t"
-	output, err := sshClient.ExecuteCommand(testCmd)
-	if err != nil {
-		spinner.Stop()
-		interactive.Error(fmt.Sprintf("NGINX configuration test failed:\n%s", output))
-		return fmt.Errorf("nginx configuration test failed: %w", err)
-	}
-
-	// Reload NGINX
-	reloadCmd := "sudo systemctl reload nginx"
-	if _, err := sshClient.ExecuteCommand(reloadCmd); err != nil {
-		spinner.Stop()
-		return fmt.Errorf("failed to reload nginx: %w", err)
-	}
-
-	spinner.Stop()
-	return nil
-}
+// deploy/install helper functions were replaced by internal/nginx.Service methods.
 
 // runNginxTest tests the NGINX configuration
 func runNginxTest(cmd *cobra.Command, args []string) error {
@@ -1720,14 +1996,13 @@ func runNginxTest(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no VPS instance found")
 	}
 
-	spinner := interactive.ShowSpinner("Testing NGINX configuration...")
-
+	// Expand SSH key path
 	keyPath, err := expandPath(prof.SSH.KeyPath)
 	if err != nil {
-		spinner.Stop()
 		return fmt.Errorf("failed to expand SSH key path: %w", err)
 	}
 
+	spinner := interactive.ShowSpinner("Testing NGINX configuration...")
 	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
 	if err != nil {
 		spinner.Stop()
@@ -1740,17 +2015,15 @@ func runNginxTest(cmd *cobra.Command, args []string) error {
 	}
 	defer sshClient.Close()
 
-	output, err := sshClient.ExecuteCommand("sudo nginx -t")
-	spinner.Stop()
-
-	if err != nil {
+	nginxSvc := nginx.NewService(&sshCommandExecutor{client: sshClient})
+	if err := nginxSvc.TestConfig(); err != nil {
+		spinner.Stop()
 		interactive.Error("NGINX configuration test failed")
-		fmt.Println(output)
 		return err
 	}
 
+	spinner.Stop()
 	interactive.Success("NGINX configuration is valid!")
-	fmt.Println(output)
 	return nil
 }
 
@@ -1765,14 +2038,13 @@ func runNginxReload(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no VPS instance found")
 	}
 
-	spinner := interactive.ShowSpinner("Reloading NGINX...")
-
+	// Expand SSH key path
 	keyPath, err := expandPath(prof.SSH.KeyPath)
 	if err != nil {
-		spinner.Stop()
 		return fmt.Errorf("failed to expand SSH key path: %w", err)
 	}
 
+	spinner := interactive.ShowSpinner("Reloading NGINX...")
 	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
 	if err != nil {
 		spinner.Stop()
@@ -1785,7 +2057,8 @@ func runNginxReload(cmd *cobra.Command, args []string) error {
 	}
 	defer sshClient.Close()
 
-	if _, err := sshClient.ExecuteCommand("sudo systemctl reload nginx"); err != nil {
+	nginxSvc := nginx.NewService(&sshCommandExecutor{client: sshClient})
+	if err := nginxSvc.Reload(); err != nil {
 		spinner.Stop()
 		return fmt.Errorf("failed to reload nginx: %w", err)
 	}

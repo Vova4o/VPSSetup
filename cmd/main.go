@@ -174,6 +174,13 @@ This tool automates everything: VPS creation, DNS setup, NGINX config, and SSL c
 		RunE:  runDNSRemove,
 	}
 
+	dnsUpdateCmd = &cobra.Command{
+		Use:   "update",
+		Short: "Update DNS record",
+		Long:  `Updates an existing DNS record.`,
+		RunE:  runDNSUpdate,
+	}
+
 	statusCmd = &cobra.Command{
 		Use:   "status",
 		Short: "Check VPS status",
@@ -245,7 +252,7 @@ func init() {
 	sslCmd.AddCommand(sslInstallCmd, sslRenewCmd, sslStatusCmd)
 
 	// Add DNS subcommands
-	dnsCmd.AddCommand(dnsCreateCmd, dnsListCmd, dnsRemoveCmd)
+	dnsCmd.AddCommand(dnsCreateCmd, dnsListCmd, dnsUpdateCmd, dnsRemoveCmd)
 
 	// Add NGINX subcommands
 	nginxCmd.AddCommand(nginxSetupCmd, nginxTestCmd, nginxReloadCmd)
