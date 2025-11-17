@@ -10,6 +10,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/Vova4o/VPSSetup/internal/config"
+	"github.com/Vova4o/VPSSetup/pkg/provider"
 	"github.com/briandowns/spinner"
 	"github.com/digitalocean/godo"
 	"golang.org/x/oauth2"
@@ -186,42 +187,72 @@ func Warning(message string) {
 	fmt.Printf("⚠️  %s\n", message)
 }
 
-// getRegionsForProvider returns regions for a provider
-// TODO: This should fetch real data from provider API using the API key
-func getRegionsForProvider(provider string) []string {
-	// Placeholder: In real implementation, we'd call the provider API
-	// Example: client := digitalocean.New(apiKey); regions := client.ListRegions()
+// getRegionsForProvider returns regions for a provider using actual API
+func getRegionsForProvider(providerName, apiKey string) []string {
+	ctx := context.Background()
 
-	regions := map[string][]string{
-		"digitalocean": {"nyc1 (New York)", "nyc3 (New York)", "sfo3 (San Francisco)", "sgp1 (Singapore)", "lon1 (London)", "fra1 (Frankfurt)", "tor1 (Toronto)"},
-		"linode":       {"us-east (Newark)", "us-west (Fremont)", "eu-west (London)", "ap-south (Singapore)", "ap-northeast (Tokyo)"},
-		"vultr":        {"ewr (New Jersey)", "ord (Chicago)", "dfw (Dallas)", "sea (Seattle)", "lax (Los Angeles)", "atl (Atlanta)", "ams (Amsterdam)", "lhr (London)", "fra (Frankfurt)"},
-		"hetzner":      {"nbg1 (Nuremberg)", "fsn1 (Falkenstein)", "hel1 (Helsinki)", "ash (Ashburn)"},
+	var vpsProvider provider.VPSProvider
+	switch providerName {
+	case "digitalocean":
+		vpsProvider = provider.NewDigitalOceanProvider(apiKey)
+	default:
+		// Fallback for unsupported providers
+		return []string{"default"}
 	}
 
-	if r, ok := regions[provider]; ok {
-		return r
+	regions, err := vpsProvider.ListRegions(ctx)
+	if err != nil {
+		// Fallback to default if API fails
+		return []string{"default"}
 	}
-	return []string{"default"}
+
+	result := make([]string, 0, len(regions))
+	for _, r := range regions {
+		if r.Available {
+			result = append(result, fmt.Sprintf("%s (%s)", r.Slug, r.Name))
+		}
+	}
+
+	if len(result) == 0 {
+		return []string{"default"}
+	}
+
+	return result
 }
 
-// getSizesForProvider returns instance sizes for a provider
-// TODO: This should fetch real data from provider API using the API key
-func getSizesForProvider(provider string) []string {
-	// Placeholder: In real implementation, we'd call the provider API
-	// Example: client := digitalocean.New(apiKey); sizes := client.ListSizes()
+// getSizesForProvider returns instance sizes for a provider using actual API
+func getSizesForProvider(providerName, apiKey string) []string {
+	ctx := context.Background()
 
-	sizes := map[string][]string{
-		"digitalocean": {"s-1vcpu-1gb ($6/mo)", "s-2vcpu-2gb ($12/mo)", "s-2vcpu-4gb ($24/mo)", "s-4vcpu-8gb ($48/mo)"},
-		"linode":       {"g6-nanode-1 ($5/mo)", "g6-standard-1 ($10/mo)", "g6-standard-2 ($20/mo)", "g6-standard-4 ($40/mo)"},
-		"vultr":        {"vc2-1c-1gb ($6/mo)", "vc2-1c-2gb ($12/mo)", "vc2-2c-4gb ($24/mo)", "vc2-4c-8gb ($48/mo)"},
-		"hetzner":      {"cx11 (€4.51/mo)", "cx21 (€5.83/mo)", "cx31 (€11.05/mo)", "cx41 (€16.14/mo)"},
+	var vpsProvider provider.VPSProvider
+	switch providerName {
+	case "digitalocean":
+		vpsProvider = provider.NewDigitalOceanProvider(apiKey)
+	default:
+		return []string{"small", "medium", "large"}
 	}
 
-	if s, ok := sizes[provider]; ok {
-		return s
+	sizes, err := vpsProvider.ListSizes(ctx)
+	if err != nil {
+		return []string{"small", "medium", "large"}
 	}
-	return []string{"small", "medium", "large"}
+
+	result := make([]string, 0, len(sizes))
+	for _, s := range sizes {
+		if s.Available {
+			if s.Description != "" {
+				result = append(result, s.Description)
+			} else {
+				result = append(result, s.Slug)
+			}
+		}
+	}
+
+	if len(result) == 0 {
+		return []string{"small", "medium", "large"}
+	}
+
+	return result
 }
 
 // AskMultiline prompts for multiline input
@@ -266,7 +297,7 @@ func AskVPSConfiguration(profile *config.Profile) error {
 	if err != nil {
 		Warning(fmt.Sprintf("Failed to fetch regions: %v", err))
 		Info("Using default region list")
-		regions = getRegionsForProvider(profile.VPS.Provider)
+		regions = getRegionsForProvider(profile.VPS.Provider, profile.VPS.APIKey)
 	} else {
 		Success("Regions loaded successfully")
 	}
@@ -286,7 +317,7 @@ func AskVPSConfiguration(profile *config.Profile) error {
 	if err != nil {
 		Warning(fmt.Sprintf("Failed to fetch sizes: %v", err))
 		Info("Using default size list")
-		sizes = getSizesForProvider(profile.VPS.Provider)
+		sizes = getSizesForProvider(profile.VPS.Provider, profile.VPS.APIKey)
 	} else {
 		Success("Instance sizes loaded successfully")
 	}

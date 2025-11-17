@@ -10,11 +10,14 @@ import (
 
 	"github.com/Vova4o/VPSSetup/internal/config"
 	"github.com/Vova4o/VPSSetup/internal/connection"
+	"github.com/Vova4o/VPSSetup/internal/deploy"
 	"github.com/Vova4o/VPSSetup/internal/dns"
 	"github.com/Vova4o/VPSSetup/internal/interactive"
+	"github.com/Vova4o/VPSSetup/internal/logs"
 	"github.com/Vova4o/VPSSetup/internal/nginx"
 	"github.com/Vova4o/VPSSetup/internal/setup"
 	"github.com/Vova4o/VPSSetup/internal/ssl"
+	"github.com/Vova4o/VPSSetup/internal/upload"
 	"github.com/Vova4o/VPSSetup/pkg/provider"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -368,47 +371,793 @@ func runUpload(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("📦 Uploading project from: %s\n", prof.Project.Path)
+	// Check if VPS exists
+	if prof.VPS.PublicIP == "" {
+		interactive.Error("No VPS IP address found in config")
+		interactive.Info("Run 'vpssetup setup' first to create a VPS")
+		return fmt.Errorf("no VPS configured for profile '%s'", profile)
+	}
+
+	fmt.Println("🚀 Deployment Wizard")
+	fmt.Println()
+
+	// Ask for deployment type
+	deployTypes := []string{
+		"static - Static HTML/CSS/JS website",
+		"docker-compose - Full-stack app with Docker Compose (DB, Redis, etc.)",
+		"standalone - Manual deployment (upload files only)",
+	}
+
+	deployTypeStr, err := interactive.AskSelect("Select deployment type:", deployTypes)
+	if err != nil {
+		return err
+	}
+
+	switch {
+	case strings.HasPrefix(deployTypeStr, "static"):
+		return runStaticDeploy(cmd, prof)
+	case strings.HasPrefix(deployTypeStr, "docker-compose"):
+		return runDockerComposeDeploy(cmd, prof)
+	case strings.HasPrefix(deployTypeStr, "standalone"):
+		return runStandaloneDeploy(cmd, prof)
+	default:
+		return fmt.Errorf("unknown deployment type")
+	}
+}
+
+// runStaticDeploy handles static website deployment
+func runStaticDeploy(cmd *cobra.Command, prof *config.Profile) error {
+	// Get local path
+	localPath, err := interactive.AskInput("Enter local project path:", "./")
+	if err != nil {
+		return err
+	}
+
+	// Get domain
+	domain, err := interactive.AskInput("Enter domain name:", prof.Domain.Name)
+	if err != nil {
+		return err
+	}
+
+	// Get remote path
+	remotePath, err := interactive.AskInput("Enter remote deployment path:",
+		fmt.Sprintf("/var/www/%s/html", domain))
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("\n📦 Deploying static website\n")
+	fmt.Printf("   Local:  %s\n", localPath)
+	fmt.Printf("   Remote: %s\n", remotePath)
+	fmt.Printf("   Domain: %s\n", domain)
+	fmt.Println()
 
 	if dryRun {
-		fmt.Println("✓ Dry run complete - no files uploaded")
+		fmt.Println("✓ Dry run complete - would deploy static site")
 		return nil
 	}
 
-	// TODO: Implement project upload
-	fmt.Println("❌ Upload not implemented yet")
+	confirmed, err := interactive.ConfirmAction("Deploy static website?")
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		interactive.Info("Deployment cancelled")
+		return nil
+	}
+
+	// Connect to VPS
+	keyPath, err := expandPath(prof.SSH.KeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to expand SSH key path: %w", err)
+	}
+
+	spinner := interactive.ShowSpinner("Connecting to VPS...")
+	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
+	if err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+
+	if err := sshClient.Connect(); err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer sshClient.Close()
+	spinner.Stop()
+
+	// Generate NGINX config for static site
+	nginxConfig := generateStaticConfig(map[string]interface{}{
+		"ServerName":  domain,
+		"RootPath":    remotePath,
+		"EnableSSL":   false,
+		"MaxBodySize": "10M",
+		"AccessLog":   fmt.Sprintf("/var/log/nginx/%s.access.log", domain),
+		"ErrorLog":    fmt.Sprintf("/var/log/nginx/%s.error.log", domain),
+	})
+
+	// Deploy
+	deployer := &deploy.StaticDeployer{}
+	spinner = interactive.ShowSpinner("Deploying files...")
+
+	err = deployer.Deploy(cmd.Context(), deploy.DeployOptions{
+		Type:        deploy.DeploymentTypeStatic,
+		LocalPath:   localPath,
+		RemotePath:  remotePath,
+		SSH:         sshClient,
+		Domain:      domain,
+		NginxConfig: nginxConfig,
+	})
+	spinner.Stop()
+
+	if err != nil {
+		interactive.Error("Deployment failed")
+		return err
+	}
+
+	interactive.Success("Static website deployed successfully! 🎉")
+	fmt.Println()
+	interactive.Info("Next steps:")
+	interactive.Info(fmt.Sprintf("  1. Point your domain DNS to: %s", prof.VPS.PublicIP))
+	interactive.Info("  2. Install SSL: vpssetup ssl install")
+	interactive.Info(fmt.Sprintf("  3. Visit: http://%s", domain))
+
 	return nil
 }
 
-// runLogs handles the logs command
-func runLogs(cmd *cobra.Command, args []string) error {
+// runDockerComposeDeploy handles Docker Compose deployment
+func runDockerComposeDeploy(cmd *cobra.Command, prof *config.Profile) error {
+	fmt.Println("🐳 Docker Compose Deployment")
+	fmt.Println()
+
+	// Ask for services
+	services := []deploy.Service{}
+
+	addPostgres, _ := interactive.ConfirmAction("Include PostgreSQL database?")
+	if addPostgres {
+		version, _ := interactive.AskInput("PostgreSQL version:", "15")
+		services = append(services, deploy.Service{
+			Name:    "postgres",
+			Type:    "postgres",
+			Version: version,
+			Port:    5432,
+		})
+	}
+
+	addRedis, _ := interactive.ConfirmAction("Include Redis cache?")
+	if addRedis {
+		version, _ := interactive.AskInput("Redis version:", "7")
+		services = append(services, deploy.Service{
+			Name:    "redis",
+			Type:    "redis",
+			Version: version,
+			Port:    6379,
+		})
+	}
+
+	addRabbitMQ, _ := interactive.ConfirmAction("Include RabbitMQ message broker?")
+	if addRabbitMQ {
+		version, _ := interactive.AskInput("RabbitMQ version:", "3.12")
+		services = append(services, deploy.Service{
+			Name:    "rabbitmq",
+			Type:    "rabbitmq",
+			Version: version,
+			Port:    5672,
+		})
+	}
+
+	// Get app port
+	portStr, err := interactive.AskInput("Application port:", "8080")
+	if err != nil {
+		return err
+	}
+	port := 8080
+	fmt.Sscanf(portStr, "%d", &port)
+
+	// Get remote path
+	remotePath, err := interactive.AskInput("Remote deployment path:", "/opt/app")
+	if err != nil {
+		return err
+	}
+
+	// Generate environment variables
+	env := make(map[string]string)
+	if addPostgres {
+		env["DB_NAME"] = "myapp"
+		env["DB_USER"] = "myapp"
+		env["DB_PASSWORD"] = deploy.GeneratePassword()
+		env["DATABASE_URL"] = "postgres://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}"
+	}
+	if addRedis {
+		env["REDIS_URL"] = "redis://redis:6379"
+	}
+	if addRabbitMQ {
+		env["RABBITMQ_USER"] = "myapp"
+		env["RABBITMQ_PASSWORD"] = deploy.GeneratePassword()
+		env["RABBITMQ_URL"] = "amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672"
+	}
+
+	fmt.Printf("\n🐳 Docker Compose Configuration\n")
+	fmt.Printf("   Services: %d\n", len(services)+1)
+	for _, svc := range services {
+		fmt.Printf("     - %s (%s:%s)\n", svc.Name, svc.Type, svc.Version)
+	}
+	fmt.Printf("   App Port: %d\n", port)
+	fmt.Printf("   Path: %s\n", remotePath)
+	fmt.Println()
+
+	if dryRun {
+		fmt.Println("✓ Dry run complete - would deploy with Docker Compose")
+		return nil
+	}
+
+	confirmed, err := interactive.ConfirmAction("Deploy with Docker Compose?")
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		interactive.Info("Deployment cancelled")
+		return nil
+	}
+
+	// Connect to VPS
+	keyPath, err := expandPath(prof.SSH.KeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to expand SSH key path: %w", err)
+	}
+
+	spinner := interactive.ShowSpinner("Connecting to VPS...")
+	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
+	if err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+
+	if err := sshClient.Connect(); err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer sshClient.Close()
+	spinner.Stop()
+
+	// Deploy
+	deployer := &deploy.DockerComposeDeployer{}
+	spinner = interactive.ShowSpinner("Installing Docker and deploying services...")
+
+	err = deployer.Deploy(cmd.Context(), deploy.DeployOptions{
+		Type:       deploy.DeploymentTypeDockerCompose,
+		RemotePath: remotePath,
+		SSH:        sshClient,
+		Port:       port,
+		Services:   services,
+		Env:        env,
+	})
+	spinner.Stop()
+
+	if err != nil {
+		interactive.Error("Deployment failed")
+		return err
+	}
+
+	interactive.Success("Docker Compose deployment completed! 🎉")
+	fmt.Println()
+	interactive.Info("Environment variables (.env file):")
+	for key, value := range env {
+		interactive.Info(fmt.Sprintf("  %s=%s", key, value))
+	}
+	fmt.Println()
+	interactive.Info("Next steps:")
+	interactive.Info(fmt.Sprintf("  1. SSH: vpssetup connect"))
+	interactive.Info(fmt.Sprintf("  2. cd %s", remotePath))
+	interactive.Info("  3. docker-compose ps - Check running containers")
+	interactive.Info("  4. docker-compose logs -f - View logs")
+
+	return nil
+}
+
+// runStandaloneDeploy handles standalone file upload
+func runStandaloneDeploy(cmd *cobra.Command, prof *config.Profile) error {
+	localPath, err := interactive.AskInput("Enter local project path:", "./")
+	if err != nil {
+		return err
+	}
+
+	remotePath, err := interactive.AskInput("Enter remote deployment path:", "/opt/app")
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("\n📦 Uploading files\n")
+	fmt.Printf("   Local:  %s\n", localPath)
+	fmt.Printf("   Remote: %s\n", remotePath)
+	fmt.Println()
+
+	if dryRun {
+		fmt.Println("✓ Dry run complete - would upload files")
+		return nil
+	}
+
+	confirmed, err := interactive.ConfirmAction("Upload files?")
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		interactive.Info("Upload cancelled")
+		return nil
+	}
+
+	// Connect and upload
+	keyPath, err := expandPath(prof.SSH.KeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to expand SSH key path: %w", err)
+	}
+
+	spinner := interactive.ShowSpinner("Connecting to VPS...")
+	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
+	if err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+
+	if err := sshClient.Connect(); err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer sshClient.Close()
+	spinner.Stop()
+
+	uploadService, err := upload.NewService(sshClient.GetClient())
+	if err != nil {
+		return fmt.Errorf("failed to create upload service: %w", err)
+	}
+	defer uploadService.Close()
+
+	spinner = interactive.ShowSpinner("Uploading files...")
+	err = uploadService.UploadProject(upload.UploadOptions{
+		LocalPath:  localPath,
+		RemotePath: remotePath,
+	})
+	spinner.Stop()
+
+	if err != nil {
+		interactive.Error("Upload failed")
+		return err
+	}
+
+	interactive.Success("Files uploaded successfully! 🎉")
+	interactive.Info("You can now SSH in and configure your application manually")
+
+	return nil
+}
+
+// runLogsNginx handles the logs nginx command
+func runLogsNginx(cmd *cobra.Command, args []string) error {
 	prof, err := cfg.GetProfile(profile)
 	if err != nil {
 		return err
 	}
 
-	tail, _ := cmd.Flags().GetInt("tail")
-	follow, _ := cmd.Flags().GetBool("follow")
+	if prof.VPS.PublicIP == "" {
+		interactive.Error("No VPS IP address found")
+		return fmt.Errorf("no VPS configured")
+	}
 
-	service := "application"
+	domain := ""
 	if len(args) > 0 {
-		service = args[0]
+		domain = args[0]
 	}
 
-	fmt.Printf("📋 Fetching logs for: %s\n", service)
-	fmt.Printf("   Lines: %d\n", tail)
-	if follow {
-		fmt.Printf("   Mode: streaming\n")
+	tail, _ := cmd.Flags().GetInt("tail")
+	grepPattern, _ := cmd.Flags().GetString("grep")
+	showError, _ := cmd.Flags().GetBool("error")
+
+	logType := "access"
+	if showError {
+		logType = "error"
 	}
+
+	fmt.Printf("📋 Fetching NGINX %s logs\n", logType)
+	if domain != "" {
+		fmt.Printf("   Domain: %s\n", domain)
+	}
+	fmt.Printf("   Lines: %d\n", tail)
+	if grepPattern != "" {
+		fmt.Printf("   Filter: %s\n", grepPattern)
+	}
+	fmt.Println()
 
 	if dryRun {
 		fmt.Println("✓ Dry run complete - no logs retrieved")
 		return nil
 	}
 
-	// TODO: Implement log retrieval
-	_ = prof
-	fmt.Println("❌ Logs not implemented yet")
+	// Connect to VPS
+	keyPath, err := expandPath(prof.SSH.KeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to expand key path: %w", err)
+	}
+
+	spinner := interactive.ShowSpinner("Connecting to VPS...")
+	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
+	if err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+
+	if err := sshClient.Connect(); err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer sshClient.Close()
+	spinner.Stop()
+
+	// Import logs package
+	logsService := logs.NewService(&sshCommandExecutor{client: sshClient})
+
+	spinner = interactive.ShowSpinner("Fetching logs...")
+	output, err := logsService.GetNginxLogs(domain, logType, logs.LogOptions{
+		Lines: tail,
+		Grep:  grepPattern,
+	})
+	spinner.Stop()
+
+	if err != nil {
+		interactive.Error(fmt.Sprintf("Failed to fetch logs: %v", err))
+		return err
+	}
+
+	if strings.TrimSpace(output) == "" {
+		interactive.Info("No logs found")
+		return nil
+	}
+
+	fmt.Println(output)
+	return nil
+}
+
+// runLogsSystem handles the logs system command
+func runLogsSystem(cmd *cobra.Command, args []string) error {
+	prof, err := cfg.GetProfile(profile)
+	if err != nil {
+		return err
+	}
+
+	if prof.VPS.PublicIP == "" {
+		interactive.Error("No VPS IP address found")
+		return fmt.Errorf("no VPS configured")
+	}
+
+	tail, _ := cmd.Flags().GetInt("tail")
+	grepPattern, _ := cmd.Flags().GetString("grep")
+
+	fmt.Printf("📋 Fetching system logs\n")
+	fmt.Printf("   Lines: %d\n", tail)
+	if grepPattern != "" {
+		fmt.Printf("   Filter: %s\n", grepPattern)
+	}
+	fmt.Println()
+
+	if dryRun {
+		fmt.Println("✓ Dry run complete - no logs retrieved")
+		return nil
+	}
+
+	keyPath, err := expandPath(prof.SSH.KeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to expand key path: %w", err)
+	}
+
+	spinner := interactive.ShowSpinner("Connecting to VPS...")
+	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
+	if err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+
+	if err := sshClient.Connect(); err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer sshClient.Close()
+	spinner.Stop()
+
+	logsService := logs.NewService(&sshCommandExecutor{client: sshClient})
+
+	spinner = interactive.ShowSpinner("Fetching logs...")
+	output, err := logsService.GetSystemLogs(logs.LogOptions{
+		Lines: tail,
+		Grep:  grepPattern,
+	})
+	spinner.Stop()
+
+	if err != nil {
+		interactive.Error(fmt.Sprintf("Failed to fetch logs: %v", err))
+		return err
+	}
+
+	if strings.TrimSpace(output) == "" {
+		interactive.Info("No logs found")
+		return nil
+	}
+
+	fmt.Println(output)
+	return nil
+}
+
+// runLogsFail2ban handles the logs fail2ban command
+func runLogsFail2ban(cmd *cobra.Command, args []string) error {
+	prof, err := cfg.GetProfile(profile)
+	if err != nil {
+		return err
+	}
+
+	if prof.VPS.PublicIP == "" {
+		interactive.Error("No VPS IP address found")
+		return fmt.Errorf("no VPS configured")
+	}
+
+	tail, _ := cmd.Flags().GetInt("tail")
+	grepPattern, _ := cmd.Flags().GetString("grep")
+
+	fmt.Printf("📋 Fetching fail2ban logs\n")
+	fmt.Printf("   Lines: %d\n", tail)
+	if grepPattern != "" {
+		fmt.Printf("   Filter: %s\n", grepPattern)
+	}
+	fmt.Println()
+
+	if dryRun {
+		fmt.Println("✓ Dry run complete - no logs retrieved")
+		return nil
+	}
+
+	keyPath, err := expandPath(prof.SSH.KeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to expand key path: %w", err)
+	}
+
+	spinner := interactive.ShowSpinner("Connecting to VPS...")
+	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
+	if err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+
+	if err := sshClient.Connect(); err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer sshClient.Close()
+	spinner.Stop()
+
+	logsService := logs.NewService(&sshCommandExecutor{client: sshClient})
+
+	spinner = interactive.ShowSpinner("Fetching logs...")
+	output, err := logsService.GetFail2banLogs(logs.LogOptions{
+		Lines: tail,
+		Grep:  grepPattern,
+	})
+	spinner.Stop()
+
+	if err != nil {
+		interactive.Error(fmt.Sprintf("Failed to fetch logs: %v", err))
+		return err
+	}
+
+	if strings.TrimSpace(output) == "" {
+		interactive.Info("No logs found")
+		return nil
+	}
+
+	fmt.Println(output)
+	return nil
+}
+
+// runLogsSSH handles the logs ssh command
+func runLogsSSH(cmd *cobra.Command, args []string) error {
+	prof, err := cfg.GetProfile(profile)
+	if err != nil {
+		return err
+	}
+
+	if prof.VPS.PublicIP == "" {
+		interactive.Error("No VPS IP address found")
+		return fmt.Errorf("no VPS configured")
+	}
+
+	tail, _ := cmd.Flags().GetInt("tail")
+	grepPattern, _ := cmd.Flags().GetString("grep")
+
+	fmt.Printf("📋 Fetching SSH authentication logs\n")
+	fmt.Printf("   Lines: %d\n", tail)
+	if grepPattern != "" {
+		fmt.Printf("   Filter: %s\n", grepPattern)
+	}
+	fmt.Println()
+
+	if dryRun {
+		fmt.Println("✓ Dry run complete - no logs retrieved")
+		return nil
+	}
+
+	keyPath, err := expandPath(prof.SSH.KeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to expand key path: %w", err)
+	}
+
+	spinner := interactive.ShowSpinner("Connecting to VPS...")
+	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
+	if err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+
+	if err := sshClient.Connect(); err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer sshClient.Close()
+	spinner.Stop()
+
+	logsService := logs.NewService(&sshCommandExecutor{client: sshClient})
+
+	spinner = interactive.ShowSpinner("Fetching logs...")
+	output, err := logsService.GetSSHLogs(logs.LogOptions{
+		Lines: tail,
+		Grep:  grepPattern,
+	})
+	spinner.Stop()
+
+	if err != nil {
+		interactive.Error(fmt.Sprintf("Failed to fetch logs: %v", err))
+		return err
+	}
+
+	if strings.TrimSpace(output) == "" {
+		interactive.Info("No logs found")
+		return nil
+	}
+
+	fmt.Println(output)
+	return nil
+}
+
+// runLogsFirewall handles the logs firewall command
+func runLogsFirewall(cmd *cobra.Command, args []string) error {
+	prof, err := cfg.GetProfile(profile)
+	if err != nil {
+		return err
+	}
+
+	if prof.VPS.PublicIP == "" {
+		interactive.Error("No VPS IP address found")
+		return fmt.Errorf("no VPS configured")
+	}
+
+	tail, _ := cmd.Flags().GetInt("tail")
+	grepPattern, _ := cmd.Flags().GetString("grep")
+
+	fmt.Printf("📋 Fetching firewall logs\n")
+	fmt.Printf("   Lines: %d\n", tail)
+	if grepPattern != "" {
+		fmt.Printf("   Filter: %s\n", grepPattern)
+	}
+	fmt.Println()
+
+	if dryRun {
+		fmt.Println("✓ Dry run complete - no logs retrieved")
+		return nil
+	}
+
+	keyPath, err := expandPath(prof.SSH.KeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to expand key path: %w", err)
+	}
+
+	spinner := interactive.ShowSpinner("Connecting to VPS...")
+	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
+	if err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+
+	if err := sshClient.Connect(); err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer sshClient.Close()
+	spinner.Stop()
+
+	logsService := logs.NewService(&sshCommandExecutor{client: sshClient})
+
+	spinner = interactive.ShowSpinner("Fetching logs...")
+	output, err := logsService.GetFirewallLogs(logs.LogOptions{
+		Lines: tail,
+		Grep:  grepPattern,
+	})
+	spinner.Stop()
+
+	if err != nil {
+		interactive.Error(fmt.Sprintf("Failed to fetch logs: %v", err))
+		return err
+	}
+
+	if strings.TrimSpace(output) == "" {
+		interactive.Info("No logs found")
+		return nil
+	}
+
+	fmt.Println(output)
+	return nil
+}
+
+// runLogsService handles the logs service command
+func runLogsService(cmd *cobra.Command, args []string) error {
+	prof, err := cfg.GetProfile(profile)
+	if err != nil {
+		return err
+	}
+
+	if prof.VPS.PublicIP == "" {
+		interactive.Error("No VPS IP address found")
+		return fmt.Errorf("no VPS configured")
+	}
+
+	serviceName := args[0]
+	tail, _ := cmd.Flags().GetInt("tail")
+	grepPattern, _ := cmd.Flags().GetString("grep")
+
+	fmt.Printf("📋 Fetching logs for service: %s\n", serviceName)
+	fmt.Printf("   Lines: %d\n", tail)
+	if grepPattern != "" {
+		fmt.Printf("   Filter: %s\n", grepPattern)
+	}
+	fmt.Println()
+
+	if dryRun {
+		fmt.Println("✓ Dry run complete - no logs retrieved")
+		return nil
+	}
+
+	keyPath, err := expandPath(prof.SSH.KeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to expand key path: %w", err)
+	}
+
+	spinner := interactive.ShowSpinner("Connecting to VPS...")
+	sshClient, err := connection.NewSSHClient(prof.VPS.PublicIP, prof.SSH.User, keyPath)
+	if err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+
+	if err := sshClient.Connect(); err != nil {
+		spinner.Stop()
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer sshClient.Close()
+	spinner.Stop()
+
+	logsService := logs.NewService(&sshCommandExecutor{client: sshClient})
+
+	spinner = interactive.ShowSpinner("Fetching logs...")
+	output, err := logsService.GetServiceLogs(serviceName, logs.LogOptions{
+		Lines: tail,
+		Grep:  grepPattern,
+	})
+	spinner.Stop()
+
+	if err != nil {
+		interactive.Error(fmt.Sprintf("Failed to fetch logs: %v", err))
+		return err
+	}
+
+	if strings.TrimSpace(output) == "" {
+		interactive.Info("No logs found")
+		return nil
+	}
+
+	fmt.Println(output)
 	return nil
 }
 
@@ -1228,10 +1977,28 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	interactive.Warning("This will permanently destroy the VPS instance!")
+	// Check if VPS exists
+	if prof.VPS.InstanceID == "" {
+		interactive.Error("No VPS instance found in this profile")
+		interactive.Info("Nothing to destroy")
+		return nil
+	}
+
+	interactive.Warning("⚠️  DANGER: This will permanently destroy the VPS instance!")
 	fmt.Printf("   Profile: %s\n", profile)
 	fmt.Printf("   Provider: %s\n", prof.VPS.Provider)
-	fmt.Printf("   Domain: %s\n", prof.FullDomain())
+	if prof.VPS.Name != "" {
+		fmt.Printf("   Instance: %s\n", prof.VPS.Name)
+	}
+	fmt.Printf("   Instance ID: %s\n", prof.VPS.InstanceID)
+	if prof.VPS.PublicIP != "" {
+		fmt.Printf("   Public IP: %s\n", prof.VPS.PublicIP)
+	}
+	if prof.FullDomain() != "" {
+		fmt.Printf("   Domain: %s\n", prof.FullDomain())
+	}
+	fmt.Println()
+	interactive.Warning("⚠️  All data on this VPS will be PERMANENTLY LOST!")
 	fmt.Println()
 
 	if dryRun {
@@ -1259,10 +2026,64 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	s := interactive.ShowSpinner("Destroying VPS instance...")
-	// TODO: Implement VPS destruction
-	s.Stop()
-	interactive.Success("VPS instance destroyed")
+	// Final confirmation
+	finalConfirm, err := interactive.ConfirmAction("FINAL WARNING: Destroy VPS now?")
+	if err != nil {
+		return err
+	}
+	if !finalConfirm {
+		interactive.Info("Destroy cancelled")
+		return nil
+	}
+
+	// Create provider based on provider type
+	var vpsProvider provider.VPSProvider
+	switch prof.VPS.Provider {
+	case "digitalocean":
+		vpsProvider = provider.NewDigitalOceanProvider(prof.VPS.APIKey)
+	case "sweb":
+		interactive.Error("SWeb provider does not support VPS destruction via API")
+		interactive.Info("Please delete the VPS manually from your SWeb control panel")
+		return fmt.Errorf("sweb provider does not support VPS API operations")
+	default:
+		return fmt.Errorf("unsupported provider: %s", prof.VPS.Provider)
+	}
+
+	// Delete the instance
+	spinner := interactive.ShowSpinner("Destroying VPS instance...")
+	err = vpsProvider.DeleteInstance(cmd.Context(), prof.VPS.InstanceID)
+	spinner.Stop()
+
+	if err != nil {
+		interactive.Error("Failed to destroy VPS instance")
+		return fmt.Errorf("failed to delete instance: %w", err)
+	}
+
+	interactive.Success("VPS instance destroyed successfully! 💥")
+	fmt.Println()
+	interactive.Info("Instance data:")
+	interactive.Info(fmt.Sprintf("  Name: %s", prof.VPS.Name))
+	interactive.Info(fmt.Sprintf("  ID: %s", prof.VPS.InstanceID))
+	interactive.Info(fmt.Sprintf("  IP: %s", prof.VPS.PublicIP))
+	fmt.Println()
+
+	// Ask if user wants to clear the config
+	clearConfig, err := interactive.ConfirmAction("Clear VPS configuration from profile?")
+	if err == nil && clearConfig {
+		// Clear VPS info from profile
+		prof.VPS.InstanceID = ""
+		prof.VPS.PublicIP = ""
+		prof.VPS.Name = ""
+		prof.VPS.Region = ""
+		prof.VPS.CreatedAt = ""
+
+		if err := cfg.Save(cfgFile); err != nil {
+			interactive.Warning(fmt.Sprintf("Failed to update config: %v", err))
+			interactive.Info("You may want to manually remove the VPS info from config.yaml")
+		} else {
+			interactive.Success("Profile configuration cleared")
+		}
+	}
 
 	return nil
 }

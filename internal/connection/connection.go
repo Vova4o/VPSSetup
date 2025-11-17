@@ -111,3 +111,8 @@ func (c *SSHClient) WaitForReady(timeout time.Duration) error {
 
 	return fmt.Errorf("timeout waiting for SSH to be ready")
 }
+
+// GetClient returns the underlying SSH client
+func (c *SSHClient) GetClient() *ssh.Client {
+	return c.client
+}

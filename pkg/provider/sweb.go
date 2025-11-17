@@ -367,3 +367,21 @@ func (s *SWebProvider) RemoveSubdomain(ctx context.Context, domain, subdomain st
 
 	return nil
 }
+
+// ListRegions lists available regions (stub for SWeb)
+func (s *SWebProvider) ListRegions(ctx context.Context) ([]Region, error) {
+	// SWeb doesn't provide region selection
+	return []Region{{Slug: "ru", Name: "Russia", Available: true}}, nil
+}
+
+// ListSizes lists available instance sizes (stub for SWeb)
+func (s *SWebProvider) ListSizes(ctx context.Context) ([]Size, error) {
+	// SWeb doesn't provide size selection via API
+	return []Size{{Slug: "default", Description: "Default", Available: true}}, nil
+}
+
+// ListImages lists available OS images (stub for SWeb)
+func (s *SWebProvider) ListImages(ctx context.Context) ([]Image, error) {
+	// SWeb doesn't provide image selection
+	return []Image{{Slug: "ubuntu-22-04", Name: "Ubuntu 22.04", Distribution: "Ubuntu", Public: true}}, nil
+}

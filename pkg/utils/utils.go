@@ -14,7 +14,7 @@ func FileExists(path string) bool {
 
 // EnsureDir creates directory if it doesn't exist
 func EnsureDir(path string) error {
-	return os.MkdirAll(path, 0755)
+	return os.MkdirAll(path, 0o755)
 }
 
 // ExpandPath expands ~ to home directory
@@ -29,12 +29,6 @@ func ExpandPath(path string) (string, error) {
 	}
 
 	return filepath.Join(homeDir, path[1:]), nil
-}
-
-// ValidateConfig validates configuration values
-func ValidateConfig(config interface{}) error {
-	// TODO: Implement configuration validation
-	return fmt.Errorf("not implemented yet")
 }
 
 // FormatBytes formats bytes to human readable format

@@ -112,11 +112,53 @@ This tool automates everything: VPS creation, DNS setup, NGINX config, and SSL c
 	}
 
 	logsCmd = &cobra.Command{
-		Use:   "logs [service]",
-		Short: "Fetch logs from VPS",
-		Long:  `Retrieves application or system logs from the VPS.`,
+		Use:   "logs",
+		Short: "Fetch infrastructure logs from VPS",
+		Long:  `Retrieves infrastructure logs from the VPS (nginx, system, fail2ban, ssh, firewall).`,
+	}
+
+	logsNginxCmd = &cobra.Command{
+		Use:   "nginx [domain]",
+		Short: "Fetch NGINX logs",
+		Long:  `Retrieves NGINX access or error logs for a specific domain or the main nginx logs.`,
 		Args:  cobra.MaximumNArgs(1),
-		RunE:  runLogs,
+		RunE:  runLogsNginx,
+	}
+
+	logsSystemCmd = &cobra.Command{
+		Use:   "system",
+		Short: "Fetch system logs",
+		Long:  `Retrieves system logs via journalctl.`,
+		RunE:  runLogsSystem,
+	}
+
+	logsFail2banCmd = &cobra.Command{
+		Use:   "fail2ban",
+		Short: "Fetch fail2ban logs",
+		Long:  `Retrieves fail2ban security logs.`,
+		RunE:  runLogsFail2ban,
+	}
+
+	logsSSHCmd = &cobra.Command{
+		Use:   "ssh",
+		Short: "Fetch SSH authentication logs",
+		Long:  `Retrieves SSH authentication logs from auth.log.`,
+		RunE:  runLogsSSH,
+	}
+
+	logsFirewallCmd = &cobra.Command{
+		Use:   "firewall",
+		Short: "Fetch firewall logs",
+		Long:  `Retrieves UFW firewall logs.`,
+		RunE:  runLogsFirewall,
+	}
+
+	logsServiceCmd = &cobra.Command{
+		Use:   "service <name>",
+		Short: "Fetch logs for a systemd service",
+		Long:  `Retrieves logs for a specific systemd service via journalctl.`,
+		Args:  cobra.ExactArgs(1),
+		RunE:  runLogsService,
 	}
 
 	sslCmd = &cobra.Command{
@@ -244,9 +286,10 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "simulate actions without making changes")
 
-	// Logs command flags
-	logsCmd.Flags().IntP("tail", "n", 100, "number of lines to show")
-	logsCmd.Flags().BoolP("follow", "f", false, "stream logs in real-time")
+	// Logs command flags (apply to all log subcommands)
+	logsCmd.PersistentFlags().IntP("tail", "n", 100, "number of lines to show")
+	logsCmd.PersistentFlags().StringP("grep", "g", "", "filter logs by pattern")
+	logsNginxCmd.Flags().Bool("error", false, "show error logs instead of access logs")
 
 	// Add SSL subcommands
 	sslCmd.AddCommand(sslInstallCmd, sslRenewCmd, sslStatusCmd)
@@ -256,6 +299,9 @@ func init() {
 
 	// Add NGINX subcommands
 	nginxCmd.AddCommand(nginxSetupCmd, nginxTestCmd, nginxReloadCmd)
+
+	// Add Logs subcommands
+	logsCmd.AddCommand(logsNginxCmd, logsSystemCmd, logsFail2banCmd, logsSSHCmd, logsFirewallCmd, logsServiceCmd)
 
 	// Add all commands to root
 	rootCmd.AddCommand(

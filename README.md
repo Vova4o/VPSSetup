@@ -7,6 +7,7 @@ Fast and reliable VPS setup automation tool that eliminates the pain of manual s
 Sick and tired of VPS configuration? The constant back-and-forth between different dashboards just to setup a VPS, then switching to SSH terminals, configuring NGINX, managing DNS records, setting up SSL certificates... It's exhausting and time-consuming.
 
 Every single deployment meant:
+
 - Logging into the VPS provider dashboard
 - Spinning up a server
 - Switching to the domain registrar to configure DNS
@@ -20,28 +21,43 @@ Every single deployment meant:
 
 ## Features
 
-### ✅ Implemented (Phase 1 & 2 - Complete)
+### ✅ Implemented (All Phases Complete)
 
-- **VPS Creation** - Automated VPS provisioning on DigitalOcean
+#### Phase 1 & 2: Infrastructure & Configuration
+
+- **VPS Management** - Create, destroy, restart, status, connect to VPS
 - **SSH Key Management** - Automatic SSH key generation and upload (with reuse detection)
 - **Firewall Configuration** - Automatic security rules for SSH, HTTP, HTTPS
 - **System Updates** - Automatic apt-get update & upgrade after VPS creation
-- **SSH Connection** - Direct SSH access to your VPS
 - **Security Hardening** - Automated fail2ban, UFW firewall, and SSH hardening
-- **VPS Restart** - Reboot VPS via API
 - **DNS Management** - Full DNS record management (A, AAAA, CNAME, TXT, MX, NS, SRV) via sweb.ru API
 - **NGINX Configuration** - Automatic NGINX setup with support for static sites, reverse proxy, and PHP
+- **SSL Certificates** - Let's Encrypt integration for automatic HTTPS
 - **Config Management** - Profile-based YAML configuration with VPS info persistence
 - **Interactive CLI** - Beautiful, user-friendly prompts and progress indicators
 
-### 📋 Planned (Phase 3)
+#### Phase 3: Deployment & Monitoring
 
-- **Application Upload** - Deploy your code to VPS
-- **SSL Certificates** - Let's Encrypt integration
-- **Logs Retrieval** - Fetch application logs
-- **Status Monitoring** - Check VPS health
-- **Destroy Command** - Clean removal of resources
-- **Multiple Providers** - Support for AWS, Linode, Vultr
+- **Deployment System** - Three deployment strategies:
+  - **Docker Compose** - Full-stack apps with PostgreSQL, Redis, RabbitMQ
+  - **Static Sites** - HTML/CSS/JS with automatic NGINX configuration
+  - **Standalone** - Manual file upload for custom setups
+- **SFTP Upload** - Secure file transfer with automatic exclusions (.git, node_modules, etc.)
+- **Logs Management** - Fetch and view infrastructure logs:
+  - NGINX access/error logs
+  - System logs (syslog)
+  - fail2ban logs
+  - SSH authentication logs
+  - Firewall (UFW) logs
+  - Systemd service logs
+- **Real Provider Data** - Fetch available regions and sizes from DigitalOcean API
+
+### 🚀 Future Enhancements
+
+- **Multiple Providers** - Support for AWS, Linode, Vultr, Hetzner
+- **Rollback System** - Restore previous deployment versions
+- **Health Monitoring** - Automated uptime checks and alerts
+- **Backup Management** - Automated VPS snapshots and restore
 
 ## Prerequisites
 
@@ -74,6 +90,7 @@ make build
 ```
 
 This will:
+
 - Ask for your DigitalOcean API token
 - Optionally ask for DNS provider credentials (sweb.ru)
 - Generate SSH keys (or use existing ones)
@@ -86,6 +103,7 @@ This will:
 ```
 
 This will **interactively**:
+
 - Let you choose region (e.g., Toronto, NYC, San Francisco)
 - Let you choose instance size (e.g., $4/mo, $6/mo, $12/mo)
 - Ask for VPS name
@@ -100,6 +118,7 @@ This will **interactively**:
 ```
 
 This automatically:
+
 - Installs and configures fail2ban
 - Configures UFW firewall
 - Hardens SSH configuration (disable root login, key-only auth)
@@ -112,6 +131,7 @@ This automatically:
 ```
 
 This interactively:
+
 - Installs NGINX on the VPS
 - Asks for domain name and configuration type (static/proxy/PHP)
 - Generates optimized NGINX configuration
@@ -133,6 +153,7 @@ This interactively:
 ```
 
 Supported record types:
+
 - **A** - IPv4 address
 - **AAAA** - IPv6 address
 - **CNAME** - Canonical name
@@ -161,39 +182,55 @@ Reboots the VPS via DigitalOcean API.
 
 ### Infrastructure Commands
 
-| Command | Description |
-|---------|-------------|
-| `init` | Initialize configuration and API tokens |
-| `setup` | Create and configure a new VPS |
-| `connect` | SSH into the VPS |
-| `restart` | Reboot the VPS |
-| `harden` | Apply security hardening |
-| `status` | Show VPS status and information |
+| Command   | Description                             |
+| --------- | --------------------------------------- |
+| `init`    | Initialize configuration and API tokens |
+| `setup`   | Create and configure a new VPS          |
+| `connect` | SSH into the VPS                        |
+| `restart` | Reboot the VPS                          |
+| `harden`  | Apply security hardening                |
+| `status`  | Show VPS status and information         |
 
 ### NGINX Commands
 
-| Command | Description |
-|---------|-------------|
-| `nginx setup` | Interactive NGINX configuration wizard |
-| `nginx test` | Test NGINX configuration for errors |
-| `nginx reload` | Reload NGINX to apply changes |
+| Command        | Description                            |
+| -------------- | -------------------------------------- |
+| `nginx setup`  | Interactive NGINX configuration wizard |
+| `nginx test`   | Test NGINX configuration for errors    |
+| `nginx reload` | Reload NGINX to apply changes          |
 
 ### DNS Commands
 
-| Command | Description |
-|---------|-------------|
-| `dns list` | List all DNS records |
+| Command      | Description             |
+| ------------ | ----------------------- |
+| `dns list`   | List all DNS records    |
 | `dns create` | Create a new DNS record |
-| `dns remove` | Delete a DNS record |
+| `dns remove` | Delete a DNS record     |
 
-### Future Commands (Planned)
+### Deployment Commands
 
-| Command | Description |
-|---------|-------------|
-| `upload` | Upload application code to VPS |
-| `deploy` | Deploy application with NGINX + SSL |
-| `logs` | Fetch and display application logs |
-| `destroy` | Remove VPS and all resources |
+| Command       | Description                                              |
+| ------------- | -------------------------------------------------------- |
+| `upload`      | Interactive deployment wizard (Docker/Static/Standalone) |
+| `ssl install` | Install Let's Encrypt SSL certificate                    |
+| `ssl renew`   | Renew SSL certificate                                    |
+
+### Logs Commands
+
+| Command               | Description                  |
+| --------------------- | ---------------------------- |
+| `logs nginx`          | View NGINX access/error logs |
+| `logs system`         | View system logs (syslog)    |
+| `logs fail2ban`       | View fail2ban logs           |
+| `logs ssh`            | View SSH authentication logs |
+| `logs firewall`       | View UFW firewall logs       |
+| `logs service <name>` | View systemd service logs    |
+
+### Management Commands
+
+| Command   | Description                            |
+| --------- | -------------------------------------- |
+| `destroy` | Remove VPS and optionally clean config |
 
 ## Global Flags
 
@@ -355,20 +392,32 @@ sudo tail -f /var/log/nginx/error.log
   - [x] SSH key management
   - [x] System updates
   - [x] Security hardening
-  
+  - [x] VPS destroy with config cleanup
 - [x] Phase 2: DNS & NGINX Management (Complete)
+
   - [x] sweb.ru integration
   - [x] Full DNS record support (A, AAAA, CNAME, TXT, MX, NS, SRV)
   - [x] Interactive DNS commands
   - [x] NGINX configuration (static, proxy, PHP)
   - [x] NGINX test and reload commands
 
-- [ ] Phase 3: Application Deployment (Next)
-  - [ ] File upload to VPS
-  - [ ] SSL certificate automation (Let's Encrypt)
-  - [ ] Application deployment
-  - [ ] Log retrieval
-  - [ ] Health monitoring
+- [x] Phase 3: Application Deployment (Complete)
+
+  - [x] SFTP file upload with smart exclusions
+  - [x] SSL certificate automation (Let's Encrypt)
+  - [x] Docker Compose deployment (PostgreSQL, Redis, RabbitMQ)
+  - [x] Static site deployment with NGINX
+  - [x] Standalone deployment
+  - [x] Infrastructure log retrieval (nginx, system, fail2ban, ssh, firewall)
+  - [x] Real provider API integration (regions, sizes)
+
+- [ ] Phase 4: Production Features (Future)
+  - [ ] Deployment rollback system
+  - [ ] Multi-provider support (AWS, Linode, Vultr)
+  - [ ] Health monitoring and alerts
+  - [ ] Automated backups and restore
+  - [ ] Load balancer configuration
+  - [ ] Database migration tools
 
 ## License
 

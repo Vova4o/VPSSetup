@@ -274,3 +274,71 @@ func (d *DigitalOceanProvider) waitForDropletActive(ctx context.Context, droplet
 		}
 	}
 }
+
+// ListRegions lists all available DigitalOcean regions
+func (d *DigitalOceanProvider) ListRegions(ctx context.Context) ([]Region, error) {
+	regions, _, err := d.client.Regions.List(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list regions: %w", err)
+	}
+
+	result := make([]Region, 0, len(regions))
+	for _, r := range regions {
+		result = append(result, Region{
+			Slug:      r.Slug,
+			Name:      r.Name,
+			Available: r.Available,
+		})
+	}
+
+	return result, nil
+}
+
+// ListSizes lists all available DigitalOcean droplet sizes
+func (d *DigitalOceanProvider) ListSizes(ctx context.Context) ([]Size, error) {
+	sizes, _, err := d.client.Sizes.List(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sizes: %w", err)
+	}
+
+	result := make([]Size, 0, len(sizes))
+	for _, s := range sizes {
+		description := fmt.Sprintf("%s - %dGB RAM, %d vCPU, %dGB SSD ($%.2f/mo)",
+			s.Slug, s.Memory/1024, s.Vcpus, s.Disk, s.PriceMonthly)
+
+		result = append(result, Size{
+			Slug:         s.Slug,
+			Memory:       s.Memory,
+			VCPUs:        s.Vcpus,
+			Disk:         s.Disk,
+			Transfer:     s.Transfer,
+			PriceMonthly: s.PriceMonthly,
+			Available:    s.Available,
+			Description:  description,
+		})
+	}
+
+	return result, nil
+}
+
+// ListImages lists all available DigitalOcean images
+func (d *DigitalOceanProvider) ListImages(ctx context.Context) ([]Image, error) {
+	// Get only distribution images (not snapshots/backups)
+	opt := &godo.ListOptions{PerPage: 200}
+	images, _, err := d.client.Images.ListDistribution(ctx, opt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list images: %w", err)
+	}
+
+	result := make([]Image, 0, len(images))
+	for _, img := range images {
+		result = append(result, Image{
+			Slug:         img.Slug,
+			Name:         img.Name,
+			Distribution: img.Distribution,
+			Public:       img.Public,
+		})
+	}
+
+	return result, nil
+}
