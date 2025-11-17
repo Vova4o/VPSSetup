@@ -244,6 +244,13 @@ This tool automates everything: VPS creation, DNS setup, NGINX config, and SSL c
 		RunE:  runHarden,
 	}
 
+	webCmd = &cobra.Command{
+		Use:   "web",
+		Short: "Start web API server",
+		Long:  `Starts a local web server with REST API and UI for managing VPS deployments.`,
+		RunE:  runWeb,
+	}
+
 	initCmd = &cobra.Command{
 		Use:   "init",
 		Short: "Interactive setup wizard",
@@ -318,6 +325,7 @@ func init() {
 		statusCmd,
 		hardenCmd,
 		destroyCmd,
+		webCmd,
 	)
 }
 

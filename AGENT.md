@@ -16,7 +16,16 @@ This document provides a comprehensive guide for AI agents working with the VPSS
 VPSSetup/
 ├── cmd/                    # CLI commands and handlers
 │   ├── main.go            # Entry point, Cobra root command
-│   └── handlers.go        # Command handlers (setup, deploy, logs, etc.)
+│   ├── handlers.go        # Command handlers (setup, deploy, logs, etc.)
+│   └── web.go             # Web server command handler
+├── api/                   # REST API (NEW!)
+│   ├── server.go          # HTTP server, routing, middleware
+│   ├── handlers_vps.go    # VPS management endpoints
+│   ├── handlers_nginx_ssl.go  # NGINX and SSL endpoints
+│   ├── handlers_simple.go # Config, provider data, stubs
+│   └── utils.go           # API utilities
+├── web/                   # Web UI (NEW!)
+│   └── index.html         # Single-page application
 ├── internal/              # Internal packages
 │   ├── config/            # Configuration management
 │   ├── connection/        # SSH client wrapper
@@ -405,6 +414,94 @@ make build
 - `--verbose` flag enables detailed output
 - `--dry-run` flag simulates actions without changes
 
+## Web Interface (NEW!)
+
+### REST API Architecture
+
+**Location**: `api/`
+
+**Server Setup** (`api/server.go`):
+
+- Gorilla mux router for HTTP routing
+- CORS-enabled WebSocket upgrader
+- JSON response helpers
+- Timeout contexts for operations
+
+**Endpoints**:
+
+**VPS Management** (`api/handlers_vps.go`):
+
+- `POST /api/vps/setup` - Create VPS (reads SSH public key from `~/.ssh/vpssetup_rsa.pub`)
+- `GET /api/vps/status` - Get VPS status
+- `POST /api/vps/destroy` - Delete VPS
+- `POST /api/vps/restart` - Reboot VPS
+- `GET /api/vps/connect` - Get SSH connection info
+- `POST /api/vps/harden` - Apply security hardening
+
+**NGINX & SSL** (`api/handlers_nginx_ssl.go`):
+
+- `POST /api/nginx/setup` - Configure NGINX (static/proxy/PHP)
+- `POST /api/nginx/test` - Test configuration
+- `POST /api/nginx/reload` - Reload NGINX
+- `POST /api/ssl/install` - Install Let's Encrypt certificate
+- `POST /api/ssl/renew` - Renew certificate
+
+**Provider Data** (`api/handlers_simple.go`):
+
+- `GET /api/providers/regions` - List available regions
+- `GET /api/providers/sizes` - List instance sizes
+- `GET /api/config` - Get current config
+- `PUT /api/config` - Update config
+
+**Important**: SSH Adapter Pattern
+The API uses an adapter to bridge `SSHClient.ExecuteCommand()` to `nginx.SSHExecutor.RunCommand()`:
+
+```go
+type sshAdapter struct {
+    client *connection.SSHClient
+}
+
+func (a *sshAdapter) RunCommand(cmd string) (string, error) {
+    return a.client.ExecuteCommand(cmd)
+}
+```
+
+### Web UI
+
+**Location**: `web/index.html`
+
+- Single-page application with tabs:
+  - Dashboard - VPS overview
+  - VPS - Create/manage VPS
+  - DNS - DNS records (CLI-recommended)
+  - NGINX - Web server configuration
+  - Deploy - Application deployment (CLI-recommended)
+  - Logs - System logs viewer
+- Gradient design with responsive layout
+- Real-time status updates
+- Dynamic region/size dropdowns from API
+
+**Command**: `vpssetup web --port 8080`
+
+### API Key Features
+
+1. **SSH Key Authentication**: Automatically reads public key from `.pub` file
+2. **Timeout Management**: Context timeouts for long operations
+3. **Error Handling**: Detailed error messages with nil-safety
+4. **Config Persistence**: Updates saved after VPS creation
+5. **Apt Lock Retry**: Waits up to 5 minutes for system package locks
+
+### Development Notes
+
+**Adding New Endpoints**:
+
+1. Add handler function in appropriate `handlers_*.go` file
+2. Register route in `server.go` `setupRoutes()`
+3. Use `respondSuccess()` and `respondError()` for consistent responses
+4. Add timeout context for long-running operations
+
+**Testing API**: Use curl or the web UI at http://localhost:8080
+
 ## Configuration Management
 
 - Always load config with `config.Load(configPath)`
@@ -412,14 +509,17 @@ make build
 - Validate with `profile.Validate()` before operations
 - Save updates with `cfg.Save(configPath)`
 - Store VPS info after creation for reuse
+- **Web API**: Config is loaded once at server startup in `api.NewServer()`
 
 ## SSH Best Practices
 
 1. Always use `defer sshClient.Close()`
-2. Check connection with `sshClient.Connect()`
-3. Use `ExecuteCommand()` for single commands
-4. Use `GetClient()` for SFTP operations
-5. Expand paths with `expandPath()` for ~ support
+2. **Web API**: Read public key from `keyPath + ".pub"` for VPS setup
+3. Use `utils.ExpandPath()` to handle `~` in paths
+4. Check connection with `sshClient.Connect()`
+5. Use `ExecuteCommand()` for single commands
+6. Use `GetClient()` for SFTP operations
+7. Expand paths with `expandPath()` for ~ support
 
 ## This is the Complete Reference
 

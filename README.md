@@ -2,6 +2,8 @@
 
 Fast and reliable VPS setup automation tool that eliminates the pain of manual server configuration. Automates VPS creation, DNS management, NGINX configuration, security hardening, and system updates.
 
+**🌐 Now with Web Interface!** Manage your VPS infrastructure through a beautiful web UI in addition to the powerful CLI.
+
 ## Why?
 
 Sick and tired of VPS configuration? The constant back-and-forth between different dashboards just to setup a VPS, then switching to SSH terminals, configuring NGINX, managing DNS records, setting up SSL certificates... It's exhausting and time-consuming.
@@ -52,6 +54,17 @@ Every single deployment meant:
   - Systemd service logs
 - **Real Provider Data** - Fetch available regions and sizes from DigitalOcean API
 
+#### Phase 4: Web Interface ✨ NEW!
+
+- **REST API** - Complete HTTP API for all VPS operations
+- **Web Dashboard** - Beautiful gradient UI for managing infrastructure
+- **VPS Management UI** - Create, destroy, restart, harden VPS through browser
+- **NGINX Configuration UI** - Setup static sites, reverse proxies, and PHP apps
+- **SSL Management UI** - Install and renew Let's Encrypt certificates
+- **Provider Integration** - View available regions and instance sizes
+- **Real-time Status** - Live VPS status updates
+- **Log Viewer** - View and filter system logs
+
 ### 🚀 Future Enhancements
 
 - **Multiple Providers** - Support for AWS, Linode, Vultr, Hetzner
@@ -83,7 +96,29 @@ make build
 
 ## Quick Start
 
-### 1. Initialize Configuration
+### Option A: Web Interface 🌐
+
+The easiest way to get started! Launch the web interface:
+
+```bash
+./bin/vpssetup web --port 8080
+```
+
+Then open your browser to http://localhost:8080
+
+The web interface provides:
+
+- 📊 **Dashboard** - VPS status and quick actions
+- 🖥️ **VPS Management** - Create, restart, destroy, harden
+- 🌐 **NGINX Setup** - Configure web servers (static, proxy, PHP)
+- 🔒 **SSL Management** - Install and renew certificates
+- 📝 **Logs Viewer** - View system and application logs
+
+### Option B: CLI (Command Line) ⌨️
+
+For power users and automation:
+
+#### 1. Initialize Configuration
 
 ```bash
 ./bin/vpssetup init
@@ -180,6 +215,16 @@ Reboots the VPS via DigitalOcean API.
 
 ## Command Reference
 
+### Web Interface Commands
+
+| Command | Description                           |
+| ------- | ------------------------------------- |
+| `web`   | Start web server (default port: 8080) |
+
+Options:
+
+- `--port` - Specify custom port (e.g., `--port 3000`)
+
 ### Infrastructure Commands
 
 | Command   | Description                             |
@@ -190,6 +235,7 @@ Reboots the VPS via DigitalOcean API.
 | `restart` | Reboot the VPS                          |
 | `harden`  | Apply security hardening                |
 | `status`  | Show VPS status and information         |
+| `destroy` | Destroy and delete VPS instance         |
 
 ### NGINX Commands
 

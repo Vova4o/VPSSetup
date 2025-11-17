@@ -143,6 +143,31 @@ func (s *Service) runInitialSetup(ctx context.Context, host, keyPath, user strin
 
 	interactive.Success("SSH connection established")
 
+	// Wait for apt lock to be released (automatic updates may be running)
+	spinner = interactive.ShowSpinner("Waiting for system to be ready...")
+
+	waitForAptCmd := `
+# Wait up to 5 minutes for apt lock to be released
+for i in {1..60}; do
+  if ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1 && \
+     ! fuser /var/lib/dpkg/lock >/dev/null 2>&1 && \
+     ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
+    exit 0
+  fi
+  sleep 5
+done
+exit 1
+`
+
+	_, err = sshClient.ExecuteCommand(waitForAptCmd)
+	spinner.Stop()
+
+	if err != nil {
+		interactive.Warning("Could not wait for apt lock, continuing anyway...")
+	} else {
+		interactive.Success("System is ready")
+	}
+
 	// Run system updates
 	spinner = interactive.ShowSpinner("Running system updates (this may take a few minutes)...")
 
