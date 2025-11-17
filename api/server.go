@@ -61,6 +61,7 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/vps/connect", s.handleVPSConnect).Methods("POST")
 
 	// DNS management
+	api.HandleFunc("/dns/domains", s.handleGetDomains).Methods("GET")
 	api.HandleFunc("/dns/records", s.handleDNSList).Methods("GET")
 	api.HandleFunc("/dns/records", s.handleDNSCreate).Methods("POST")
 	api.HandleFunc("/dns/records/{id}", s.handleDNSUpdate).Methods("PUT")
@@ -90,8 +91,13 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/providers/sizes", s.handleGetSizes).Methods("GET")
 
 	// Config
+	api.HandleFunc("/config/check", s.handleCheckConfig).Methods("GET")
+	api.HandleFunc("/config/init", s.handleInitConfig).Methods("POST")
 	api.HandleFunc("/config", s.handleGetConfig).Methods("GET")
 	api.HandleFunc("/config", s.handleUpdateConfig).Methods("PUT")
+
+	// SSH
+	api.HandleFunc("/ssh/generate-key", s.handleGenerateSSHKey).Methods("POST")
 }
 
 // Start starts the API server

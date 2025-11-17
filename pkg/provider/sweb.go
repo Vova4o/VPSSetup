@@ -96,6 +96,11 @@ func (s *SWebProvider) makeRequest(ctx context.Context, endpoint, method string,
 	}
 
 	if jsonResp.Error != nil {
+		// Special handling for session expiration
+		if jsonResp.Error.Code == -32603 && (jsonResp.Error.Message == "Время сеанса истекло." ||
+			jsonResp.Error.Message == "Session expired") {
+			return nil, fmt.Errorf("SWeb API session expired. Please generate a new API token from https://sweb.ru/cabinet/api/ and update your config")
+		}
 		return nil, fmt.Errorf("API error for method '%s': %s (code: %d)", method, jsonResp.Error.Message, jsonResp.Error.Code)
 	}
 
@@ -384,4 +389,38 @@ func (s *SWebProvider) ListSizes(ctx context.Context) ([]Size, error) {
 func (s *SWebProvider) ListImages(ctx context.Context) ([]Image, error) {
 	// SWeb doesn't provide image selection
 	return []Image{{Slug: "ubuntu-22-04", Name: "Ubuntu 22.04", Distribution: "Ubuntu", Public: true}}, nil
+}
+
+// ListDomains lists all domains in the SWeb account
+func (s *SWebProvider) ListDomains(ctx context.Context) ([]string, error) {
+	params := map[string]interface{}{}
+
+	resp, err := s.makeRequest(ctx, "domains", "index", params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list domains: %w", err)
+	}
+
+	// SWeb returns array of domain objects directly
+	// Try multiple possible field names
+	var domainList []map[string]interface{}
+
+	if err := json.Unmarshal(resp.Result, &domainList); err != nil {
+		return nil, fmt.Errorf("failed to parse domain list: %w", err)
+	}
+
+	domains := make([]string, 0, len(domainList))
+	for _, d := range domainList {
+		// Try different field names that might contain the domain name
+		if fqdn, ok := d["fqdn"].(string); ok && fqdn != "" {
+			domains = append(domains, fqdn)
+		} else if name, ok := d["name"].(string); ok && name != "" {
+			domains = append(domains, name)
+		} else if domain, ok := d["domain"].(string); ok && domain != "" {
+			domains = append(domains, domain)
+		} else if dname, ok := d["dname"].(string); ok && dname != "" {
+			domains = append(domains, dname)
+		}
+	}
+
+	return domains, nil
 }

@@ -164,14 +164,15 @@
       </div>
 
       <div class="tabs">
-        <button class="tab active" onclick="showTab('dashboard')">
+        <button class="tab active" onclick="showTab('dashboard', event)">
           Dashboard
         </button>
-        <button class="tab" onclick="showTab('vps')">VPS</button>
-        <button class="tab" onclick="showTab('dns')">DNS</button>
-        <button class="tab" onclick="showTab('nginx')">NGINX</button>
-        <button class="tab" onclick="showTab('deploy')">Deploy</button>
-        <button class="tab" onclick="showTab('logs')">Logs</button>
+        <button class="tab" onclick="showTab('setup', event)">⚙️ Setup</button>
+        <button class="tab" onclick="showTab('vps', event)">VPS</button>
+        <button class="tab" onclick="showTab('dns', event)">DNS</button>
+        <button class="tab" onclick="showTab('nginx', event)">NGINX</button>
+        <button class="tab" onclick="showTab('deploy', event)">Deploy</button>
+        <button class="tab" onclick="showTab('logs', event)">Logs</button>
       </div>
 
       <div class="content">
@@ -189,6 +190,121 @@
           </div>
         </div>
 
+        <!-- Setup Tab -->
+        <div id="setup" class="tab-content">
+          <h2>⚙️ Initial Configuration</h2>
+          <div class="card">
+            <p style="margin-bottom: 20px">
+              Configure your VPSSetup profile. This is required before creating
+              a VPS.
+            </p>
+
+            <div class="form-group">
+              <label>Profile Name:</label>
+              <input
+                type="text"
+                id="setup-profile"
+                placeholder="default"
+                value="default"
+              />
+            </div>
+
+            <h3 style="margin-top: 20px">VPS Provider Settings</h3>
+            <div class="form-group">
+              <label>VPS Provider:</label>
+              <select id="setup-vps-provider">
+                <option value="digitalocean">DigitalOcean</option>
+                <option value="sweb">SWeb</option>
+                <option value="linode">Linode</option>
+                <option value="vultr">Vultr</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>VPS API Token:</label>
+              <input
+                type="password"
+                id="setup-vps-token"
+                placeholder="Enter your VPS provider API token"
+              />
+            </div>
+
+            <h3 style="margin-top: 20px">DNS Provider Settings</h3>
+            <div class="form-group">
+              <label>DNS Provider:</label>
+              <select id="setup-dns-provider">
+                <option value="cloudflare">Cloudflare</option>
+                <option value="digitalocean">DigitalOcean</option>
+                <option value="route53">AWS Route53</option>
+                <option value="sweb">SWeb</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>DNS API Token:</label>
+              <input
+                type="password"
+                id="setup-dns-token"
+                placeholder="Enter your DNS provider API token"
+              />
+            </div>
+            <div class="form-group">
+              <label>DNS API URL (optional):</label>
+              <input
+                type="text"
+                id="setup-dns-url"
+                placeholder="https://api.provider.com/endpoint"
+              />
+              <small>Only required for some providers (e.g., SWeb)</small>
+            </div>
+
+            <h3 style="margin-top: 20px">SSH Settings</h3>
+            <div class="form-group">
+              <label>SSH User:</label>
+              <input
+                type="text"
+                id="setup-ssh-user"
+                placeholder="root"
+                value="root"
+              />
+            </div>
+            <div class="form-group">
+              <label>SSH Key Path:</label>
+              <input
+                type="text"
+                id="setup-ssh-key"
+                placeholder="/Users/you/.ssh/id_rsa"
+              />
+              <small>Leave empty to generate a new key</small>
+            </div>
+            <button
+              onclick="generateSSHKey()"
+              style="margin-top: 10px; background: #6c757d"
+            >
+              Generate New SSH Key
+            </button>
+
+            <h3 style="margin-top: 20px">SSL Settings</h3>
+            <div class="form-group">
+              <label>SSL Email:</label>
+              <input
+                type="email"
+                id="setup-ssl-email"
+                placeholder="you@example.com"
+              />
+            </div>
+            <div class="form-group">
+              <label>SSL Provider:</label>
+              <select id="setup-ssl-provider">
+                <option value="letsencrypt">Let's Encrypt</option>
+                <option value="zerossl">ZeroSSL</option>
+              </select>
+            </div>
+
+            <button onclick="initializeConfig()" style="margin-top: 20px">
+              Initialize Configuration
+            </button>
+          </div>
+        </div>
+
         <!-- VPS Tab -->
         <div id="vps" class="tab-content">
           <h2>VPS Management</h2>
@@ -196,21 +312,32 @@
             <h3>Create VPS</h3>
             <div class="form-group">
               <label>Region:</label>
-              <select id="vps-region">
+              <select id="vps-region" onchange="loadSizesForRegion()">
                 <option>Loading...</option>
               </select>
             </div>
             <div class="form-group">
               <label>Size:</label>
               <select id="vps-size">
-                <option>Loading...</option>
+                <option>Select region first...</option>
               </select>
             </div>
             <div class="form-group">
               <label>Name:</label>
               <input type="text" id="vps-name" placeholder="my-vps" />
             </div>
-            <button onclick="createVPS()">Create VPS</button>
+            <button id="create-vps-btn" onclick="createVPS()">
+              Create VPS
+            </button>
+            <div
+              id="vps-creation-status"
+              style="
+                margin-top: 15px;
+                padding: 10px;
+                border-radius: 5px;
+                display: none;
+              "
+            ></div>
           </div>
 
           <div class="card">
@@ -226,8 +353,42 @@
         <!-- DNS Tab -->
         <div id="dns" class="tab-content">
           <h2>DNS Management</h2>
+
           <div class="card">
-            <h3>Add DNS Record</h3>
+            <h3>🎯 Quick Setup: Point Domain to VPS</h3>
+            <p style="margin-bottom: 15px; color: #666">
+              Configure your subdomain to point to your VPS IP address.
+            </p>
+            <div class="form-group">
+              <label>First-Level Domain:</label>
+              <select id="dns-base-domain">
+                <option value="">Loading domains...</option>
+              </select>
+              <small>Your domains from DNS provider (e.g., example.com)</small>
+            </div>
+            <div class="form-group">
+              <label>Subdomain:</label>
+              <input
+                type="text"
+                id="dns-subdomain"
+                placeholder="app, blog, www, or @ for root"
+              />
+              <small>Leave empty or use @ for root domain</small>
+            </div>
+            <div class="form-group">
+              <label>VPS IP Address:</label>
+              <input
+                type="text"
+                id="dns-vps-ip"
+                placeholder="Auto-filled from VPS status"
+                readonly
+              />
+            </div>
+            <button onclick="createSubdomainRecord()">Create A Record</button>
+          </div>
+
+          <div class="card">
+            <h3>Manual DNS Record</h3>
             <div class="form-group">
               <label>Type:</label>
               <select id="dns-type">
@@ -240,7 +401,7 @@
             </div>
             <div class="form-group">
               <label>Name:</label>
-              <input type="text" id="dns-name" placeholder="subdomain" />
+              <input type="text" id="dns-name" placeholder="subdomain or @" />
             </div>
             <div class="form-group">
               <label>Value:</label>
@@ -251,7 +412,12 @@
 
           <div class="card">
             <h3>DNS Records</h3>
-            <div id="dns-list">Loading...</div>
+            <div id="dns-list">
+              <p style="color: #666">
+                DNS records management coming soon. Use Quick Setup above to
+                point your domain to VPS.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -260,9 +426,22 @@
           <h2>NGINX Configuration</h2>
           <div class="card">
             <h3>Setup NGINX</h3>
+            <p style="margin-bottom: 15px; color: #666">
+              Enter your full domain with subdomain (e.g., app.example.com or
+              www.example.com). Make sure to point your DNS records to this VPS
+              IP first.
+            </p>
             <div class="form-group">
-              <label>Domain:</label>
-              <input type="text" id="nginx-domain" placeholder="example.com" />
+              <label>Full Domain (with subdomain):</label>
+              <input
+                type="text"
+                id="nginx-domain"
+                placeholder="app.example.com or www.example.com"
+              />
+              <small
+                >Example: blog.mydomain.com, api.myapp.com, or just
+                mydomain.com</small
+              >
             </div>
             <div class="form-group">
               <label>Type:</label>
@@ -346,7 +525,7 @@
     </div>
 
     <script>
-      function showTab(tabName) {
+      function showTab(tabName, event) {
         // Hide all tabs
         document.querySelectorAll(".tab-content").forEach((tab) => {
           tab.classList.remove("active");
@@ -357,7 +536,21 @@
 
         // Show selected tab
         document.getElementById(tabName).classList.add("active");
-        event.target.classList.add("active");
+
+        // Highlight the tab button if event is provided (clicked from UI)
+        if (event && event.target) {
+          event.target.classList.add("active");
+        } else {
+          // Find and activate the corresponding tab button
+          document.querySelectorAll(".tab").forEach((btn) => {
+            if (
+              btn.textContent.toLowerCase().includes(tabName) ||
+              btn.getAttribute("onclick").includes(`'${tabName}'`)
+            ) {
+              btn.classList.add("active");
+            }
+          });
+        }
       }
 
       async function apiCall(endpoint, method = "GET", body = null) {
@@ -370,6 +563,11 @@
 
           const response = await fetch(`/api${endpoint}`, options);
           const data = await response.json();
+
+          // Debug logging
+          if (endpoint.includes("/dns/domains")) {
+            console.log("DNS domains API response:", data);
+          }
 
           if (!data.success) {
             throw new Error(data.error);
@@ -399,33 +597,157 @@
         }
       }
 
+      async function loadSizesForRegion() {
+        const region = document.getElementById("vps-region").value;
+        if (!region || region === "Loading...") return;
+
+        const sizeSelect = document.getElementById("vps-size");
+        sizeSelect.innerHTML = "<option>Loading sizes for region...</option>";
+
+        try {
+          const sizes = await apiCall(`/providers/sizes?region=${region}`);
+          if (sizes.length === 0) {
+            sizeSelect.innerHTML =
+              "<option>No sizes available for this region</option>";
+          } else {
+            sizeSelect.innerHTML = sizes
+              .map((s) => `<option value="${s.Slug}">${s.Description}</option>`)
+              .join("");
+          }
+        } catch (error) {
+          console.error("Failed to load sizes for region:", error);
+          sizeSelect.innerHTML = "<option>Error loading sizes</option>";
+        }
+      }
+
       async function createVPS() {
         const region = document.getElementById("vps-region").value;
         const size = document.getElementById("vps-size").value;
         const name = document.getElementById("vps-name").value;
 
-        await apiCall("/vps/setup", "POST", { region, size, name });
-        alert("VPS created successfully!");
-        refreshStatus();
+        const button = document.getElementById("create-vps-btn");
+        const statusDiv = document.getElementById("vps-creation-status");
+
+        // Disable button and show progress
+        button.disabled = true;
+        button.textContent = "Creating...";
+        statusDiv.style.display = "block";
+        statusDiv.style.background = "#fff3cd";
+        statusDiv.style.color = "#856404";
+        statusDiv.innerHTML =
+          "⏳ Creating VPS instance...<br><small>This may take 2-3 minutes. Please wait...</small>";
+
+        // Start polling status in background
+        const statusPoller = setInterval(() => refreshStatus(), 3000);
+
+        try {
+          await apiCall("/vps/setup", "POST", { region, size, name });
+
+          statusDiv.style.background = "#d4edda";
+          statusDiv.style.color = "#155724";
+          statusDiv.innerHTML =
+            "✅ VPS created successfully!<br><small>IP address and status updated above.</small>";
+
+          await refreshStatus();
+
+          // Hide status after 5 seconds
+          setTimeout(() => {
+            statusDiv.style.display = "none";
+          }, 5000);
+        } catch (error) {
+          statusDiv.style.background = "#f8d7da";
+          statusDiv.style.color = "#721c24";
+          statusDiv.innerHTML = `❌ Failed to create VPS: ${error.message}`;
+        } finally {
+          // Re-enable button and stop polling
+          clearInterval(statusPoller);
+          button.disabled = false;
+          button.textContent = "Create VPS";
+        }
       }
 
       async function restartVPS() {
         if (!confirm("Restart VPS?")) return;
-        await apiCall("/vps/restart", "POST");
-        alert("VPS restart initiated!");
+
+        const btn = event.target;
+        btn.disabled = true;
+        btn.textContent = "Restarting...";
+
+        try {
+          await apiCall("/vps/restart", "POST");
+          alert("VPS restart initiated!");
+          setTimeout(() => refreshStatus(), 2000);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Restart VPS";
+        }
       }
 
       async function hardenVPS() {
         if (!confirm("Apply security hardening?")) return;
-        await apiCall("/harden", "POST");
-        alert("Security hardening complete!");
+
+        const btn = event.target;
+        btn.disabled = true;
+        btn.textContent = "Hardening...";
+
+        try {
+          await apiCall("/harden", "POST");
+          alert("Security hardening complete!");
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Harden Security";
+        }
       }
 
       async function destroyVPS() {
         if (!confirm("Are you sure? This cannot be undone!")) return;
-        await apiCall("/vps/destroy", "DELETE");
-        alert("VPS destroyed!");
-        refreshStatus();
+
+        const btn = event.target;
+        btn.disabled = true;
+        btn.textContent = "Destroying...";
+
+        try {
+          await apiCall("/vps/destroy", "DELETE");
+          alert("VPS destroyed!");
+          refreshStatus();
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Destroy VPS";
+        }
+      }
+
+      async function createSubdomainRecord() {
+        const baseDomain = document.getElementById("dns-base-domain").value;
+        const subdomain = document.getElementById("dns-subdomain").value;
+        const vpsIP = document.getElementById("dns-vps-ip").value;
+
+        if (!baseDomain) {
+          alert("Please select a base domain");
+          return;
+        }
+        if (!vpsIP) {
+          alert("VPS IP not available. Create a VPS first.");
+          return;
+        }
+
+        const recordName = subdomain && subdomain !== "@" ? subdomain : "@";
+        const fullDomain =
+          subdomain && subdomain !== "@"
+            ? `${subdomain}.${baseDomain}`
+            : baseDomain;
+
+        if (!confirm(`Create A record for ${fullDomain} → ${vpsIP}?`)) return;
+
+        await apiCall("/dns/records", "POST", {
+          type: "A",
+          name: recordName,
+          value: vpsIP,
+          domain: baseDomain,
+        });
+
+        alert(
+          `DNS record created!\n\n${fullDomain} → ${vpsIP}\n\nYou can now configure NGINX for this domain.`
+        );
       }
 
       async function createDNS() {
@@ -435,6 +757,35 @@
 
         await apiCall("/dns/records", "POST", { type, name, value });
         alert("DNS record created!");
+      }
+
+      async function loadDNSDomains() {
+        const domainSelect = document.getElementById("dns-base-domain");
+
+        try {
+          domainSelect.innerHTML =
+            '<option value="">Loading domains...</option>';
+
+          const domains = await apiCall("/dns/domains");
+
+          console.log("Loaded domains:", domains);
+
+          if (!domains || domains.length === 0) {
+            domainSelect.innerHTML =
+              '<option value="">No domains found in DNS provider</option>';
+            return;
+          }
+
+          domainSelect.innerHTML =
+            '<option value="">-- Select a domain --</option>' +
+            domains.map((d) => `<option value="${d}">${d}</option>`).join("");
+        } catch (error) {
+          console.error("Failed to load DNS domains:", error);
+          const errorMsg = error.message || "Unknown error";
+          domainSelect.innerHTML =
+            `<option value="">Error: ${errorMsg}</option>` +
+            '<option value="">Check DNS provider configuration in Setup tab</option>';
+        }
       }
 
       async function setupNginx() {
@@ -478,10 +829,126 @@
         document.getElementById("log-output").textContent = data.logs;
       }
 
+      // Setup Tab Functions
+      async function initializeConfig() {
+        const config = {
+          profile: document.getElementById("setup-profile").value,
+          vps_provider: document.getElementById("setup-vps-provider").value,
+          vps_api_token: document.getElementById("setup-vps-token").value,
+          dns_provider: document.getElementById("setup-dns-provider").value,
+          dns_api_token: document.getElementById("setup-dns-token").value,
+          dns_api_url: document.getElementById("setup-dns-url").value,
+          domain: "",
+          subdomain: "",
+          ssh_user: document.getElementById("setup-ssh-user").value,
+          ssh_key_path: document.getElementById("setup-ssh-key").value,
+          ssl_email: document.getElementById("setup-ssl-email").value,
+          ssl_provider: document.getElementById("setup-ssl-provider").value,
+        };
+
+        if (!config.vps_api_token || !config.ssl_email) {
+          alert("Please fill in required fields: VPS API Token and SSL Email");
+          return;
+        }
+
+        try {
+          await apiCall("/config/init", "POST", config);
+          alert("Configuration initialized successfully! Page will reload.");
+          window.location.reload();
+        } catch (error) {
+          console.error("Failed to initialize config:", error);
+        }
+      }
+
+      async function generateSSHKey() {
+        const useDefault = confirm(
+          "Generate SSH key at default location?\n\n" +
+            "~/.ssh/vpssetup_rsa\n\n" +
+            "Click OK to use default, or Cancel to specify custom path."
+        );
+
+        let keyPath = "";
+        if (!useDefault) {
+          keyPath = prompt(
+            "Enter custom path for SSH key (use ~ for home directory):",
+            "~/.ssh/my_custom_key"
+          );
+          if (!keyPath) return;
+        }
+
+        try {
+          // Try to generate key (will return existing key if it exists)
+          let result = await apiCall("/ssh/generate-key", "POST", {
+            key_path: keyPath,
+            overwrite: false,
+          });
+
+          // If key already exists, ask user if they want to overwrite
+          if (result.already_exists) {
+            const overwrite = confirm(
+              `SSH key already exists at:\n${result.private_key}\n\n` +
+                "Do you want to use the existing key?\n\n" +
+                "Click OK to use existing key, or Cancel to generate a new one (will overwrite)."
+            );
+
+            if (!overwrite) {
+              // Generate new key with overwrite flag
+              result = await apiCall("/ssh/generate-key", "POST", {
+                key_path: keyPath,
+                overwrite: true,
+              });
+              alert(
+                `New SSH key generated!\n\nPrivate key: ${result.private_key}\nPublic key: ${result.public_key}`
+              );
+            } else {
+              alert(
+                `Using existing SSH key:\n\nPrivate key: ${result.private_key}\nPublic key: ${result.public_key}`
+              );
+            }
+          } else {
+            alert(
+              `SSH key generated successfully!\n\nPrivate key: ${result.private_key}\nPublic key: ${result.public_key}`
+            );
+          }
+
+          // Auto-fill the SSH key path field
+          document.getElementById("setup-ssh-key").value = result.private_key;
+        } catch (error) {
+          console.error("Failed to generate SSH key:", error);
+        }
+      }
+
+      async function checkConfig() {
+        try {
+          const data = await apiCall("/config/check");
+          if (data.exists) {
+            // Config exists, show Dashboard by default
+            showTab("dashboard");
+          } else {
+            // No config, show Setup tab
+            showTab("setup");
+          }
+        } catch (error) {
+          console.error("Failed to check config:", error);
+          showTab("setup");
+        }
+      }
+
+      // Update VPS IP in DNS tab when status changes
+      async function updateDNSIPField() {
+        try {
+          const status = await apiCall("/vps/status");
+          if (status.PublicIP) {
+            document.getElementById("dns-vps-ip").value = status.PublicIP;
+          }
+        } catch (error) {
+          console.error("Failed to update DNS IP field:", error);
+        }
+      }
+
       // Load regions and sizes on page load
       window.addEventListener("load", async () => {
-        refreshStatus();
-
+        // Load regions first
         try {
           const regions = await apiCall("/providers/regions");
           const regionSelect = document.getElementById("vps-region");
@@ -489,14 +956,31 @@
             .map((r) => `<option value="${r.Slug}">${r.Name}</option>`)
             .join("");
 
-          const sizes = await apiCall("/providers/sizes");
-          const sizeSelect = document.getElementById("vps-size");
-          sizeSelect.innerHTML = sizes
-            .map((s) => `<option value="${s.Slug}">${s.Description}</option>`)
-            .join("");
+          // Auto-load sizes for the first region
+          if (regions.length > 0) {
+            await loadSizesForRegion();
+          }
         } catch (error) {
           console.error("Failed to load provider data:", error);
+          document.getElementById("vps-region").innerHTML =
+            "<option>Error loading regions</option>";
+          document.getElementById("vps-size").innerHTML =
+            "<option>Error loading sizes</option>";
         }
+
+        // Check config and show appropriate tab
+        try {
+          await checkConfig();
+        } catch (error) {
+          console.error("Failed to check config:", error);
+          // Default to setup tab if config check fails
+          showTab("setup");
+        }
+
+        // Load other data
+        refreshStatus();
+        updateDNSIPField();
+        loadDNSDomains();
       });
     </script>
   </body>

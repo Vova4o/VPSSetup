@@ -65,6 +65,7 @@ type Size struct {
 	Transfer     float64
 	PriceMonthly float64
 	Available    bool
+	Regions      []string
 	Description  string
 }
 

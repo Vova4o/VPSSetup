@@ -50,7 +50,7 @@ func (s *Server) handleGetSizes(w http.ResponseWriter, r *http.Request) {
 	case "digitalocean":
 		vpsProvider = provider.NewDigitalOceanProvider(profile.VPS.APIKey)
 	default:
-		s.respondError(w, http.StatusBadRequest, err)
+		s.respondError(w, http.StatusBadRequest, fmt.Errorf("unsupported provider"))
 		return
 	}
 
@@ -63,7 +63,29 @@ func (s *Server) handleGetSizes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Filter by region if specified
+	region := r.URL.Query().Get("region")
+	if region != "" {
+		filteredSizes := make([]provider.Size, 0)
+		for _, size := range sizes {
+			// Check if size is available in the requested region
+			if len(size.Regions) == 0 || containsString(size.Regions, region) {
+				filteredSizes = append(filteredSizes, size)
+			}
+		}
+		sizes = filteredSizes
+	}
+
 	s.respondSuccess(w, sizes)
+}
+
+func containsString(slice []string, str string) bool {
+	for _, s := range slice {
+		if s == str {
+			return true
+		}
+	}
+	return false
 }
 
 // handleGetConfig returns current configuration

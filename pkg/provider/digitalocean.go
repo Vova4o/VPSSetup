@@ -314,6 +314,7 @@ func (d *DigitalOceanProvider) ListSizes(ctx context.Context) ([]Size, error) {
 			Transfer:     s.Transfer,
 			PriceMonthly: s.PriceMonthly,
 			Available:    s.Available,
+			Regions:      s.Regions,
 			Description:  description,
 		})
 	}
