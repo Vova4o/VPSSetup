@@ -108,7 +108,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	fmt.Println()
 	interactive.Success(fmt.Sprintf("Configuration saved to %s", configPath))
-	interactive.Info(fmt.Sprintf("You can now run: vpssetup deploy --profile %s", profileName))
+	interactive.Info("You can now run: vpssetup deploy --profile " + profileName)
 
 	return nil
 }
@@ -133,7 +133,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	}
 
 	// Ask for VPS name
-	vpsName, err := interactive.AskInput("\nEnter VPS name:", fmt.Sprintf("vps-%s", profile))
+	vpsName, err := interactive.AskInput("\nEnter VPS name:", "vps-"+profile)
 	if err != nil {
 		return err
 	}
@@ -173,10 +173,6 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 	// Read SSH public key
 	sshPublicKey, err := os.ReadFile(sshKeyPath + ".pub")
-	if err != nil {
-		return fmt.Errorf("failed to read SSH public key: %w", err)
-	}
-
 	// Create setup service
 	setupService := setup.NewService(provider)
 
@@ -266,14 +262,10 @@ func runConnect(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build SSH command
-	sshCmd := fmt.Sprintf("ssh -i %s -o StrictHostKeyChecking=no %s@%s",
-		sshKeyPath,
-		prof.SSH.User,
-		prof.VPS.PublicIP,
-	)
+	sshCmd := "ssh -i " + sshKeyPath + " -o StrictHostKeyChecking=no " + prof.SSH.User + "@" + prof.VPS.PublicIP
 
 	interactive.Info("Connecting via SSH...")
-	interactive.Info(fmt.Sprintf("Command: %s", sshCmd))
+	interactive.Info("Command: " + sshCmd)
 	fmt.Println()
 
 	// Execute SSH connection
@@ -421,7 +413,7 @@ func runStaticDeploy(cmd *cobra.Command, prof *config.Profile) error {
 
 	// Get remote path
 	remotePath, err := interactive.AskInput("Enter remote deployment path:",
-		fmt.Sprintf("/var/www/%s/html", domain))
+		"/var/www/"+domain+"/html")
 	if err != nil {
 		return err
 	}
@@ -498,9 +490,9 @@ func runStaticDeploy(cmd *cobra.Command, prof *config.Profile) error {
 	interactive.Success("Static website deployed successfully! 🎉")
 	fmt.Println()
 	interactive.Info("Next steps:")
-	interactive.Info(fmt.Sprintf("  1. Point your domain DNS to: %s", prof.VPS.PublicIP))
+	interactive.Info("  1. Point your domain DNS to: " + prof.VPS.PublicIP)
 	interactive.Info("  2. Install SSL: vpssetup ssl install")
-	interactive.Info(fmt.Sprintf("  3. Visit: http://%s", domain))
+	interactive.Info("  3. Visit: http://" + domain)
 
 	return nil
 }
@@ -647,8 +639,8 @@ func runDockerComposeDeploy(cmd *cobra.Command, prof *config.Profile) error {
 	}
 	fmt.Println()
 	interactive.Info("Next steps:")
-	interactive.Info(fmt.Sprintf("  1. SSH: vpssetup connect"))
-	interactive.Info(fmt.Sprintf("  2. cd %s", remotePath))
+	interactive.Info("  1. SSH: vpssetup connect")
+	interactive.Info("  2. cd " + remotePath)
 	interactive.Info("  3. docker-compose ps - Check running containers")
 	interactive.Info("  4. docker-compose logs -f - View logs")
 
@@ -1247,7 +1239,7 @@ func runSSLInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	interactive.Success("SSL certificate installed successfully! 🎉")
-	interactive.Info(fmt.Sprintf("Your site is now available at: https://%s", domain))
+	interactive.Info("Your site is now available at: https://" + domain)
 
 	return nil
 }
@@ -1480,7 +1472,7 @@ func runDNSCreate(cmd *cobra.Command, args []string) error {
 		defaultValue = ""
 	}
 
-	recordValue, err := interactive.AskInput(fmt.Sprintf("Record value (for %s record):", recordType), defaultValue)
+	recordValue, err := interactive.AskInput("Record value (for "+recordType+" record):", defaultValue)
 	if err != nil {
 		return err
 	}
@@ -1534,7 +1526,7 @@ func runDNSCreate(cmd *cobra.Command, args []string) error {
 	interactive.Success("DNS record created successfully! 🎉")
 	interactive.Info("")
 	interactive.Info("Note: DNS propagation may take a few minutes to several hours")
-	interactive.Info(fmt.Sprintf("You can check with: dig %s.%s", recordName, prof.Domain.Name))
+	interactive.Info("You can check with: dig " + recordName + "." + prof.Domain.Name)
 
 	return nil
 }
@@ -1652,7 +1644,7 @@ func runDNSRemove(cmd *cobra.Command, args []string) error {
 			if name == "" || name == "@" {
 				name = "@"
 			}
-			optionStr := fmt.Sprintf("%s: %s %s -> %s", record.ID, name, record.Type, record.Value)
+			optionStr := record.ID + ": " + name + " " + record.Type + " -> " + record.Value
 			options[i] = optionStr
 			recordMap[optionStr] = &records[i]
 		}
@@ -1749,7 +1741,7 @@ func runDNSUpdate(cmd *cobra.Command, args []string) error {
 		if name == "" || name == "@" {
 			name = "@"
 		}
-		optionStr := fmt.Sprintf("%s: %s %s -> %s", record.ID, name, record.Type, record.Value)
+		optionStr := record.ID + ": " + name + " " + record.Type + " -> " + record.Value
 		options[i] = optionStr
 		recordMap[optionStr] = &records[i]
 	}
@@ -2017,7 +2009,7 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 	}
 
 	// Ask user to type the profile name to confirm
-	profileName, err := interactive.AskInput(fmt.Sprintf("Type '%s' to confirm:", profile), "")
+	profileName, err := interactive.AskInput("Type '"+profile+"' to confirm:", "")
 	if err != nil {
 		return err
 	}
