@@ -1,0 +1,45 @@
+# Binaries
+vpssetup
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# Config files with secrets
+config.yaml
+config.yml
+*.local.yaml
+*.local.yml
+
+# SSH keys
+*.pem
+*.key
+id_rsa*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
